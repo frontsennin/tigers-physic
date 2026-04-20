@@ -17,13 +17,17 @@
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`
 - `VITE_FIREBASE_APP_ID`
 
-3. Opcional: `VITE_BOOTSTRAP_ADMIN_EMAIL` — se o **primeiro** e-mail de cadastro for exatamente este valor (case-insensitive), o perfil nasce como **admin** em vez de jogador (ver `AuthContext.ensureProfile`).
+3. Opcional:
+   - `VITE_BOOTSTRAP_ADMIN_EMAIL` — se o **primeiro** documento `profiles/{uid}` for criado para um utilizador com este e-mail (ignorando maiúsculas), o papel nasce como **admin** em vez de jogador.
+   - `VITE_BOOTSTRAP_ADMIN_PHONE` — o mesmo para o **número em formato E.164** (ex.: `+351912345678`), útil quando o login é só por SMS (ver `AuthContext.ensureProfile`).
 
 Sem `.env` válido, a app mostra a página de configuração (`SetupEnvPage`) em vez do app principal.
 
 ## Firebase — serviços a ativar
 
-- **Authentication**: provedor E-mail/senha.
+- **Authentication**: provedor E-mail/senha; opcionalmente **Google** e **Telefone** (SMS), já usados em `/login`.
+  - Em **Authentication → Settings → Authorized domains**, inclua o domínio onde a app corre (ex.: `localhost` em desenvolvimento e o domínio de produção no Vercel/Netlify/etc.).
+  - **Telefone**: em desenvolvimento pode usar [números de teste](https://firebase.google.com/docs/auth/web/phone-auth?hl=pt-br#test-with-firebase-console) no console para não gastar quota de SMS.
 - **Firestore**: criar base de dados; publicar `firestore.rules` e `firestore.indexes.json` (ver secção Deploy).
 - **Storage**: publicar `storage.rules`.
 

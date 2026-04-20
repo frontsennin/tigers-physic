@@ -8,11 +8,18 @@ import {
   type ReactNode,
 } from 'react'
 import {
+  GoogleAuthProvider,
+  RecaptchaVerifier,
   createUserWithEmailAndPassword,
+  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPhoneNumber,
+  signInWithPopup,
+  signInWithRedirect,
   signOut,
   updateProfile,
+  type ConfirmationResult,
   type User,
 } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
@@ -31,6 +38,11 @@ type AuthState = {
 type AuthContextValue = AuthState & {
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, displayName: string) => Promise<void>
+  signInWithGoogle: () => Promise<void>
+  sendPhoneVerificationCode: (
+    phoneNumberE164: string,
+    appVerifier: RecaptchaVerifier,
+  ) => Promise<ConfirmationResult>
   logout: () => Promise<void>
   refreshProfile: () => Promise<void>
   isManagement: boolean
@@ -38,6 +50,23 @@ type AuthContextValue = AuthState & {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+
+/** Normaliza telefone para comparar com `user.phoneNumber` (E.164). */
+function normalizePhoneE164(raw: string | undefined | null): string | null {
+  if (!raw) return null
+  const trimmed = raw.trim().replace(/\s/g, '')
+  if (!trimmed) return null
+  const digits = trimmed.replace(/\D/g, '')
+  if (!digits) return null
+  return `+${digits}`
+}
+
+function prefersGoogleRedirect(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent,
+  )
+}
 
 async function fetchProfile(uid: string): Promise<UserProfile | null> {
   return getProfile(uid)
@@ -54,19 +83,31 @@ async function ensureProfile(
     return { uid: user.uid, ...d, role: normalizeUserRole(d.role) }
   }
 
-  const bootstrap = (
+  const bootstrapEmail = (
     import.meta.env.VITE_BOOTSTRAP_ADMIN_EMAIL as string | undefined
   )
     ?.trim()
     .toLowerCase()
+  const bootstrapPhone = normalizePhoneE164(
+    import.meta.env.VITE_BOOTSTRAP_ADMIN_PHONE as string | undefined,
+  )
   const email = user.email?.trim().toLowerCase() ?? ''
+  const phone = user.phoneNumber ?? ''
   const role: UserRole =
-    bootstrap && email && email === bootstrap ? 'admin' : 'jogador'
+    (bootstrapEmail && email && email === bootstrapEmail) ||
+    (bootstrapPhone && phone && phone === bootstrapPhone)
+      ? 'admin'
+      : 'jogador'
 
   const profile: UserProfile = {
     uid: user.uid,
     email: user.email ?? '',
-    displayName: displayName || user.email?.split('@')[0] || 'Atleta',
+    displayName:
+      displayName ||
+      user.displayName ||
+      user.email?.split('@')[0] ||
+      user.phoneNumber ||
+      'Atleta',
     role,
     sectors: [],
     createdAt: Date.now(),
@@ -105,25 +146,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(getFirebaseAuth(), async (u) => {
-      setError(null)
-      setUser(u)
-      if (u) {
-        try {
-          await loadProfile(u)
-        } catch (e) {
-          console.error(e)
-          setError(
-            e instanceof Error ? e.message : 'Erro ao carregar perfil.',
-          )
+    const auth = getFirebaseAuth()
+    let active = true
+    let unsub: (() => void) | undefined
+
+    void (async () => {
+      try {
+        await getRedirectResult(auth)
+      } catch {
+        // Sem redirect pendente ou ambiente não suportado — ignorar.
+      }
+      if (!active) return
+      unsub = onAuthStateChanged(auth, async (u) => {
+        if (!active) return
+        setError(null)
+        setUser(u)
+        if (u) {
+          try {
+            await loadProfile(u)
+          } catch (e) {
+            console.error(e)
+            setError(
+              e instanceof Error ? e.message : 'Erro ao carregar perfil.',
+            )
+            setProfile(null)
+          }
+        } else {
           setProfile(null)
         }
-      } else {
-        setProfile(null)
-      }
-      setLoading(false)
-    })
-    return () => unsub()
+        setLoading(false)
+      })
+    })()
+
+    return () => {
+      active = false
+      unsub?.()
+    }
   }, [loadProfile])
 
   const login = useCallback(async (email: string, password: string) => {
@@ -148,6 +206,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [loadProfile],
   )
 
+  const signInWithGoogle = useCallback(async () => {
+    setError(null)
+    const auth = getFirebaseAuth()
+    const provider = new GoogleAuthProvider()
+    provider.setCustomParameters({ prompt: 'select_account' })
+    if (prefersGoogleRedirect()) {
+      await signInWithRedirect(auth, provider)
+      return
+    }
+    await signInWithPopup(auth, provider)
+  }, [])
+
+  const sendPhoneVerificationCode = useCallback(
+    async (phoneNumberE164: string, appVerifier: RecaptchaVerifier) => {
+      setError(null)
+      return signInWithPhoneNumber(
+        getFirebaseAuth(),
+        phoneNumberE164,
+        appVerifier,
+      )
+    },
+    [],
+  )
+
   const logout = useCallback(async () => {
     setError(null)
     await signOut(getFirebaseAuth())
@@ -168,12 +250,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       error,
       login,
       register,
+      signInWithGoogle,
+      sendPhoneVerificationCode,
       logout,
       refreshProfile,
       isManagement: profile ? isManagementRole(profile.role) : false,
       isPreparador: profile?.role === 'preparador',
     }),
-    [user, profile, loading, error, login, register, logout, refreshProfile],
+    [
+      user,
+      profile,
+      loading,
+      error,
+      login,
+      register,
+      signInWithGoogle,
+      sendPhoneVerificationCode,
+      logout,
+      refreshProfile,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

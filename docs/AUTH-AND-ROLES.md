@@ -2,7 +2,7 @@
 
 ## Fluxo
 
-1. Firebase **Authentication** (e-mail/senha).
+1. Firebase **Authentication**: e-mail/senha, **Google** (popup no desktop; redirect no browser de telemóvel) e **telefone** (SMS + reCAPTCHA invisível na página de login).
 2. Documento em **`profiles/{uid}`** é a fonte de verdade do **papel** e dados de perfil.
 3. `AuthContext` (`src/contexts/AuthContext.tsx`):
    - `onAuthStateChanged` → carrega perfil com `getProfile`.
