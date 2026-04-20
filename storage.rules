@@ -1,0 +1,21 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function profile() {
+      return firestore.get(
+        /databases/(default)/documents/profiles/$(request.auth.uid)
+      ).data;
+    }
+
+    function isManagement() {
+      return request.auth != null &&
+        profile().role in ['admin', 'coordenador', 'preparador'];
+    }
+
+    match /evidence/{userId}/{allPaths=**} {
+      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null &&
+        (request.auth.uid == userId || isManagement());
+    }
+  }
+}
