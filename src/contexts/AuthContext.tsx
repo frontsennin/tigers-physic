@@ -141,39 +141,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const auth = getFirebaseAuth()
     let active = true
-    let unsub: (() => void) | undefined
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      if (!active) return
+      setError(null)
+      setUser(u)
+      if (u) {
+        try {
+          await loadProfile(u)
+        } catch (e) {
+          console.error(e)
+          setError(e instanceof Error ? e.message : 'Erro ao carregar perfil.')
+          setProfile(null)
+        }
+      } else {
+        setProfile(null)
+      }
+      setLoading(false)
+    })
 
+    // Processa o retorno do redirect em paralelo, mas sem bloquear o listener.
     void (async () => {
       try {
-        await getRedirectResult(auth)
-      } catch {
-        // Sem redirect pendente ou ambiente não suportado — ignorar.
-      }
-      if (!active) return
-      unsub = onAuthStateChanged(auth, async (u) => {
-        if (!active) return
+        const cred = await Promise.race([
+          getRedirectResult(auth),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+        ])
+        if (!active || !cred?.user) return
         setError(null)
-        setUser(u)
-        if (u) {
-          try {
-            await loadProfile(u)
-          } catch (e) {
-            console.error(e)
-            setError(
-              e instanceof Error ? e.message : 'Erro ao carregar perfil.',
-            )
-            setProfile(null)
-          }
-        } else {
+        setUser(cred.user)
+        try {
+          await loadProfile(cred.user)
+        } catch (e) {
+          console.error(e)
+          setError(e instanceof Error ? e.message : 'Erro ao carregar perfil.')
           setProfile(null)
         }
         setLoading(false)
-      })
+      } catch {
+        // Sem redirect pendente ou ambiente não suportado — ignorar.
+      }
     })()
 
     return () => {
       active = false
-      unsub?.()
+      unsub()
     }
   }, [loadProfile])
 
@@ -209,7 +220,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
     try {
-      await signInWithPopup(auth, provider)
+      const cred = await signInWithPopup(auth, provider)
+      // Em alguns ambientes o onAuthStateChanged pode demorar/não refletir;
+      // garantimos a atualização do estado logo após o popup.
+      setUser(cred.user)
+      try {
+        await loadProfile(cred.user)
+      } catch (e) {
+        console.error(e)
+        setError(e instanceof Error ? e.message : 'Erro ao carregar perfil.')
+        setProfile(null)
+      }
     } catch (e) {
       const code =
         e && typeof e === 'object' && 'code' in e ? String((e as any).code) : ''
@@ -226,7 +247,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       throw e
     }
-  }, [])
+  }, [loadProfile])
 
   const logout = useCallback(async () => {
     setError(null)
