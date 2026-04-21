@@ -55,6 +55,25 @@ firebase deploy --only firestore:rules,firestore:indexes
 firebase deploy --only storage
 ```
 
+## Google Login (importante): Firebase Hosting para o `authDomain`
+
+Se aparecer no console/network algo como:
+- `GET https://<seu-projeto>.firebaseapp.com/__/firebase/init.json 404`
+
+Então o **Firebase Hosting** ainda não foi publicado para esse projeto. O login do Google (especialmente com redirect) usa o `authDomain` para carregar o handler `__/auth/handler`, e sem Hosting isso pode falhar e “não voltar logado”.
+
+1. Faça o build:
+
+```bash
+npm run build
+```
+
+2. Faça o deploy do Hosting **uma vez** (mesmo que você hospede a app no Vercel):
+
+```bash
+firebase deploy --only hosting
+```
+
 Ou use o link que o Firestore sugere quando uma query exige índice composto. O ficheiro `firestore.indexes.json` já inclui um índice opcional em `analyses` (`userId` + `createdAt`); a listagem atual em código ordena no cliente após `where('userId'==)`, por isso **não depende** desse índice para funcionar.
 
 ## Primeiro utilizador
