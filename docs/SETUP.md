@@ -30,6 +30,12 @@ Sem `.env` válido, a app mostra a página de configuração (`SetupEnvPage`) em
 - **Firestore**: criar base de dados; publicar `firestore.rules` e `firestore.indexes.json` (ver secção Deploy).
 - **Storage**: publicar `storage.rules`.
 
+## Deploy no Vercel (SPA / React Router)
+
+Este projeto usa `BrowserRouter` (histórico). Em produção, recarregar a página em rotas como `/login` precisa de **rewrite** para `index.html`.
+
+- Já incluímos `vercel.json` com rewrite global para evitar 404 ao entrar direto em `/login` ou ao voltar do login do Google.
+
 ## Scripts npm
 
 ```bash
