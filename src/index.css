@@ -1143,6 +1143,12 @@ textarea {
   gap: 10px;
 }
 
+@media (max-width: 420px) {
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
 .section-title {
   margin: 0;
   font-size: 15px;
