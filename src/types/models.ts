@@ -112,6 +112,24 @@ export type UserProfile = {
   displayName: string
   role: UserRole
   sectors: Sector[]
+  /** Altura (cm) */
+  heightCm: number | null
+  /** Peso (kg) */
+  weightKg: number | null
+  /** Body Fat (%) */
+  bodyFatPct: number | null
+  /** Massa magra (kg) */
+  leanMassKg: number | null
+  /** Velocidade média (m/s) */
+  avgSpeed: number | null
+  /** Velocidade máxima (m/s) */
+  maxSpeed: number | null
+  /** Objetivo de peso (kg) — só preparador edita */
+  targetWeightKg: number | null
+  /** Objetivo de BF (%) — só preparador edita */
+  targetBodyFatPct: number | null
+  /** Objetivo de massa magra (kg) — só preparador edita */
+  targetLeanMassKg: number | null
   createdAt: number
   updatedAt: number
 }

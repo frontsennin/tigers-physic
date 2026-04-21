@@ -14,6 +14,7 @@ import {
   listAnalysesForUser,
   listTrainingsForUser,
   updateUserRoleAndSectors,
+  updateUserMetrics,
 } from '../services/db'
 import {
   ANALYSIS_CATEGORIES,
@@ -62,11 +63,24 @@ export function PlayerDetailPage() {
   const { profile, user, isManagement, isPreparador, refreshProfile } =
     useAuth()
 
+  const [tab, setTab] = useState<'info' | 'analises' | 'treinos'>('info')
   const [name, setName] = useState('')
   const [role, setRole] = useState<UserRole>('jogador')
   const [sectors, setSectors] = useState<Sector[]>([])
   const [savingMeta, setSavingMeta] = useState(false)
+  const [savingMetrics, setSavingMetrics] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [ok, setOk] = useState<string | null>(null)
+
+  const [heightCm, setHeightCm] = useState('')
+  const [weightKg, setWeightKg] = useState('')
+  const [bodyFatPct, setBodyFatPct] = useState('')
+  const [leanMassKg, setLeanMassKg] = useState('')
+  const [avgSpeed, setAvgSpeed] = useState('')
+  const [maxSpeed, setMaxSpeed] = useState('')
+  const [targetWeightKg, setTargetWeightKg] = useState('')
+  const [targetBodyFatPct, setTargetBodyFatPct] = useState('')
+  const [targetLeanMassKg, setTargetLeanMassKg] = useState('')
 
   const canView = isManagement
 
@@ -85,6 +99,19 @@ export function PlayerDetailPage() {
         setName(p.displayName)
         setRole(p.role)
         setSectors(p.sectors ?? [])
+        setHeightCm(p.heightCm == null ? '' : String(p.heightCm))
+        setWeightKg(p.weightKg == null ? '' : String(p.weightKg))
+        setBodyFatPct(p.bodyFatPct == null ? '' : String(p.bodyFatPct))
+        setLeanMassKg(p.leanMassKg == null ? '' : String(p.leanMassKg))
+        setAvgSpeed(p.avgSpeed == null ? '' : String(p.avgSpeed))
+        setMaxSpeed(p.maxSpeed == null ? '' : String(p.maxSpeed))
+        setTargetWeightKg(p.targetWeightKg == null ? '' : String(p.targetWeightKg))
+        setTargetBodyFatPct(
+          p.targetBodyFatPct == null ? '' : String(p.targetBodyFatPct),
+        )
+        setTargetLeanMassKg(
+          p.targetLeanMassKg == null ? '' : String(p.targetLeanMassKg),
+        )
       } catch (e) {
         setErr(e instanceof Error ? e.message : 'Erro ao carregar')
       }
@@ -100,6 +127,7 @@ export function PlayerDetailPage() {
     e.preventDefault()
     if (!uid) return
     setErr(null)
+    setOk(null)
     setSavingMeta(true)
     try {
       const canEditRole = profile?.role === 'admin'
@@ -115,6 +143,44 @@ export function PlayerDetailPage() {
       setErr(e instanceof Error ? e.message : 'Erro ao salvar')
     } finally {
       setSavingMeta(false)
+    }
+  }
+
+  const parseNumOrNull = (s: string): number | null => {
+    const t = s.trim().replace(',', '.')
+    if (!t) return null
+    const n = Number(t)
+    return Number.isFinite(n) ? n : null
+  }
+
+  async function saveMetrics(e: FormEvent) {
+    e.preventDefault()
+    if (!uid) return
+    setErr(null)
+    setOk(null)
+    setSavingMetrics(true)
+    try {
+      await updateUserMetrics(uid, {
+        heightCm: parseNumOrNull(heightCm),
+        weightKg: parseNumOrNull(weightKg),
+        bodyFatPct: parseNumOrNull(bodyFatPct),
+        leanMassKg: parseNumOrNull(leanMassKg),
+        avgSpeed: parseNumOrNull(avgSpeed),
+        maxSpeed: parseNumOrNull(maxSpeed),
+        ...(isPreparador
+          ? {
+              targetWeightKg: parseNumOrNull(targetWeightKg),
+              targetBodyFatPct: parseNumOrNull(targetBodyFatPct),
+              targetLeanMassKg: parseNumOrNull(targetLeanMassKg),
+            }
+          : {}),
+      })
+      setOk('Informações físicas atualizadas.')
+      if (uid === profile?.uid) await refreshProfile()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erro ao salvar informações.')
+    } finally {
+      setSavingMetrics(false)
     }
   }
 
@@ -136,56 +202,214 @@ export function PlayerDetailPage() {
       </Link>
       <h2>{title}</h2>
 
+      <div className="tabs-scroll" aria-label="Seções do atleta">
+        <button
+          type="button"
+          className={`pill pill-button ${tab === 'info' ? 'pill-button--on' : ''}`}
+          onClick={() => setTab('info')}
+        >
+          Informações
+        </button>
+        <button
+          type="button"
+          className={`pill pill-button ${tab === 'analises' ? 'pill-button--on' : ''}`}
+          onClick={() => setTab('analises')}
+        >
+          Análises
+        </button>
+        <button
+          type="button"
+          className={`pill pill-button ${tab === 'treinos' ? 'pill-button--on' : ''}`}
+          onClick={() => setTab('treinos')}
+        >
+          Treinos
+        </button>
+      </div>
+
       {err && (
         <p className="error-text" role="alert">
           {err}
         </p>
       )}
 
-      {(canEditRole || canEditSectors) && isManagement && (
-        <form className="card stack" onSubmit={saveMeta}>
-          <h3>Cargo &amp; setores</h3>
-          {canEditRole && (
+      {tab === 'info' && (
+        <>
+          {(err || ok) && (
+            <p className={err ? 'error-text' : 'muted small'} role={err ? 'alert' : undefined}>
+              {err ?? ok}
+            </p>
+          )}
+
+          {(canEditRole || canEditSectors) && isManagement && (
+            <form className="card stack" onSubmit={saveMeta}>
+              <h3>Informações do atleta</h3>
+              <p className="muted small">
+                Edite cargo e setores conforme permissões do seu papel.
+              </p>
+              {canEditRole && (
+                <label className="field">
+                  <span>Cargo</span>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value as UserRole)}
+                  >
+                    {ROLES.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {canEditSectors && (
+                <fieldset className="field">
+                  <legend>Setores (posições)</legend>
+                  <div className="chips">
+                    {SECTORS.map((s) => (
+                      <label key={s} className="chip">
+                        <input
+                          type="checkbox"
+                          checked={sectors.includes(s)}
+                          onChange={() => toggleSector(s)}
+                        />
+                        {s}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+              <button className="btn-primary" type="submit" disabled={savingMeta}>
+                {savingMeta ? 'Salvando…' : 'Salvar alterações'}
+              </button>
+            </form>
+          )}
+
+          <form className="card stack" onSubmit={saveMetrics}>
+            <h3>Informações físicas</h3>
+            <p className="muted small">
+              O atleta pode atualizar as métricas atuais no próprio perfil. Os
+              objetivos são definidos pelo preparador.
+            </p>
+            <div className="two-col">
+              <label className="field">
+                <span>Altura (cm)</span>
+                <input
+                  inputMode="decimal"
+                  value={heightCm}
+                  onChange={(e) => setHeightCm(e.target.value)}
+                  disabled={savingMetrics || !isPreparador}
+                />
+              </label>
+              <label className="field">
+                <span>Peso (kg)</span>
+                <input
+                  inputMode="decimal"
+                  value={weightKg}
+                  onChange={(e) => setWeightKg(e.target.value)}
+                  disabled={savingMetrics || !isPreparador}
+                />
+              </label>
+            </div>
+            <div className="two-col">
+              <label className="field">
+                <span>BF (%)</span>
+                <input
+                  inputMode="decimal"
+                  value={bodyFatPct}
+                  onChange={(e) => setBodyFatPct(e.target.value)}
+                  disabled={savingMetrics || !isPreparador}
+                />
+              </label>
+              <label className="field">
+                <span>Massa magra (kg)</span>
+                <input
+                  inputMode="decimal"
+                  value={leanMassKg}
+                  onChange={(e) => setLeanMassKg(e.target.value)}
+                  disabled={savingMetrics || !isPreparador}
+                />
+              </label>
+            </div>
+            <div className="two-col">
+              <label className="field">
+                <span>Velocidade média (m/s)</span>
+                <input
+                  inputMode="decimal"
+                  value={avgSpeed}
+                  onChange={(e) => setAvgSpeed(e.target.value)}
+                  disabled={savingMetrics || !isPreparador}
+                />
+              </label>
+              <label className="field">
+                <span>Velocidade máxima (m/s)</span>
+                <input
+                  inputMode="decimal"
+                  value={maxSpeed}
+                  onChange={(e) => setMaxSpeed(e.target.value)}
+                  disabled={savingMetrics || !isPreparador}
+                />
+              </label>
+            </div>
+
+            <div className="auth-divider" aria-hidden>
+              Objetivos
+            </div>
+            <div className="two-col">
+              <label className="field">
+                <span>Peso objetivo (kg)</span>
+                <input
+                  inputMode="decimal"
+                  value={targetWeightKg}
+                  onChange={(e) => setTargetWeightKg(e.target.value)}
+                  disabled={savingMetrics || !isPreparador}
+                />
+              </label>
+              <label className="field">
+                <span>BF objetivo (%)</span>
+                <input
+                  inputMode="decimal"
+                  value={targetBodyFatPct}
+                  onChange={(e) => setTargetBodyFatPct(e.target.value)}
+                  disabled={savingMetrics || !isPreparador}
+                />
+              </label>
+            </div>
             <label className="field">
-              <span>Cargo</span>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as UserRole)}
-              >
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
+              <span>Massa magra objetivo (kg)</span>
+              <input
+                inputMode="decimal"
+                value={targetLeanMassKg}
+                onChange={(e) => setTargetLeanMassKg(e.target.value)}
+                disabled={savingMetrics || !isPreparador}
+              />
             </label>
-          )}
-          {canEditSectors && (
-            <fieldset className="field">
-              <legend>Setores (posições)</legend>
-              <div className="chips">
-                {SECTORS.map((s) => (
-                  <label key={s} className="chip">
-                    <input
-                      type="checkbox"
-                      checked={sectors.includes(s)}
-                      onChange={() => toggleSector(s)}
-                    />
-                    {s}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-          )}
-          <button className="btn-primary" type="submit" disabled={savingMeta}>
-            {savingMeta ? 'Salvando…' : 'Salvar alterações'}
-          </button>
-        </form>
+
+            {isPreparador && (
+              <button className="btn-primary" type="submit" disabled={savingMetrics}>
+                {savingMetrics ? 'Salvando…' : 'Salvar informações físicas'}
+              </button>
+            )}
+          </form>
+
+          <div className="card stack">
+            <h3>Resumo</h3>
+            <p>
+              <strong>Nome:</strong> {title}
+            </p>
+            <p>
+              <strong>Cargo:</strong> {role}
+            </p>
+            <p>
+              <strong>Setores:</strong>{' '}
+              {sectors.length ? sectors.join(' · ') : <span className="muted">—</span>}
+            </p>
+          </div>
+        </>
       )}
 
-      {analysisForm.ui}
+      {tab === 'analises' && analysisForm.ui}
 
-      {trainingForm.ui}
+      {tab === 'treinos' && trainingForm.ui}
 
       {showMgmtForms && (
         <p className="muted small">
@@ -213,6 +437,7 @@ function useAnalysisForm(
     ReturnType<typeof listAnalysesForUser>
   > >([])
   const [busy, setBusy] = useState(false)
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     if (!uid) return
@@ -244,6 +469,7 @@ function useAnalysisForm(
       setValueText('')
       setProtocol('')
       setNotes('')
+      setCreating(false)
     } finally {
       setBusy(false)
     }
@@ -251,7 +477,23 @@ function useAnalysisForm(
 
   const ui = (
     <section className="stack-lg">
-      <h3>Análises de performance</h3>
+      <div className="card stack">
+        <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+          <h3 style={{ margin: 0 }}>Análises</h3>
+          {isPreparador && !creating && (
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setCreating(true)}
+            >
+              Criar nova
+            </button>
+          )}
+        </div>
+        <p className="muted small">
+          Histórico de medições e protocolos do atleta.
+        </p>
+      </div>
       <ul className="analysis-list">
         {list.map((a) => (
           <li key={a.id} className="analysis-item">
@@ -272,9 +514,19 @@ function useAnalysisForm(
         ))}
       </ul>
 
-      {isPreparador && (
+      {isPreparador && creating && (
         <form className="card stack" onSubmit={submit}>
-          <h4>Nova análise</h4>
+          <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+            <h4 style={{ margin: 0 }}>Nova análise</h4>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setCreating(false)}
+              disabled={busy}
+            >
+              Cancelar
+            </button>
+          </div>
           <label className="field">
             <span>Categoria</span>
             <select
@@ -384,6 +636,7 @@ function useTrainingForm(
   > >([])
   const [busy, setBusy] = useState(false)
   const [catalogPreset, setCatalogPreset] = useState<WorkoutPreset | null>(null)
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     if (!uid) return
@@ -508,6 +761,7 @@ function useTrainingForm(
       setEquipStr('')
       setExtrasStr('')
       setCatalogPreset(null)
+      setCreating(false)
     } finally {
       setBusy(false)
     }
@@ -515,7 +769,23 @@ function useTrainingForm(
 
   const ui = (
     <section className="stack-lg">
-      <h3>Treinos prescritos</h3>
+      <div className="card stack">
+        <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+          <h3 style={{ margin: 0 }}>Treinos</h3>
+          {isPreparador && !creating && (
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setCreating(true)}
+            >
+              Criar novo
+            </button>
+          )}
+        </div>
+        <p className="muted small">
+          Treinos prescritos e dias sugeridos de execução.
+        </p>
+      </div>
       <ul className="training-list">
         {list.map((t) => (
           <li key={t.id} className="training-item">
@@ -532,9 +802,19 @@ function useTrainingForm(
         ))}
       </ul>
 
-      {isPreparador && (
+      {isPreparador && creating && (
         <form className="card stack" onSubmit={submit}>
-          <h4>Novo treino</h4>
+          <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+            <h4 style={{ margin: 0 }}>Novo treino</h4>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setCreating(false)}
+              disabled={busy}
+            >
+              Cancelar
+            </button>
+          </div>
           <p className="muted small">
             Busque um exercício no catálogo ou digite um nome próprio. Ajuste
             séries, carga ou tempo conforme o modo. Marque os dias da semana em

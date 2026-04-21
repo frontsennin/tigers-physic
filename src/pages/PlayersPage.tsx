@@ -1,13 +1,18 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, Navigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 import { listProfiles } from '../services/db'
 import type { UserProfile } from '../types/models'
-import { isManagementRole } from '../types/models'
+import { SECTORS, isManagementRole, type Sector } from '../types/models'
 
 export function PlayersPage() {
+  const { isManagement } = useAuth()
   const [rows, setRows] = useState<UserProfile[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [group, setGroup] = useState<'athletes' | 'staff'>('athletes')
+  const [sector, setSector] = useState<Sector | 'all'>('all')
+  const [q, setQ] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -28,6 +33,36 @@ export function PlayersPage() {
     }
   }, [])
 
+  const athletes = useMemo(
+    () => rows.filter((p) => !isManagementRole(p.role)),
+    [rows],
+  )
+  const staff = useMemo(
+    () => rows.filter((p) => isManagementRole(p.role)),
+    [rows],
+  )
+
+  const visible = useMemo(() => {
+    const base = group === 'athletes' ? athletes : staff
+    const qq = q.trim().toLowerCase()
+    return base
+      .filter((p) => {
+        if (group === 'athletes' && sector !== 'all') {
+          return (p.sectors ?? []).includes(sector)
+        }
+        return true
+      })
+      .filter((p) => {
+        if (!qq) return true
+        const hay = `${p.displayName} ${p.email}`.toLowerCase()
+        return hay.includes(qq)
+      })
+  }, [athletes, group, q, sector, staff])
+
+  if (!isManagement) {
+    return <Navigate to="/" replace />
+  }
+
   if (loading) {
     return <div className="page-padding muted">Carregando atletas…</div>
   }
@@ -47,28 +82,90 @@ export function PlayersPage() {
         Gestão vê parâmetros e evolução. Apenas o preparador cadastra análises e
         treinos.
       </p>
+
+      <div className="segmented">
+        <button
+          type="button"
+          className={group === 'athletes' ? 'seg seg--on' : 'seg'}
+          onClick={() => setGroup('athletes')}
+        >
+          Atletas <span className="muted">({athletes.length})</span>
+        </button>
+        <button
+          type="button"
+          className={group === 'staff' ? 'seg seg--on' : 'seg'}
+          onClick={() => setGroup('staff')}
+        >
+          Staff <span className="muted">({staff.length})</span>
+        </button>
+      </div>
+
+      <div className="card stack">
+        <label className="field">
+          <span>Buscar</span>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Nome ou e-mail…"
+          />
+        </label>
+
+        {group === 'athletes' && (
+          <div className="tabs-scroll" aria-label="Filtrar por setor">
+            <button
+              type="button"
+              className={`pill pill-button ${sector === 'all' ? 'pill-button--on' : ''}`}
+              onClick={() => setSector('all')}
+            >
+              Todos
+            </button>
+            {SECTORS.map((s) => {
+              const count = athletes.filter((p) => (p.sectors ?? []).includes(s))
+                .length
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  className={`pill pill-button ${sector === s ? 'pill-button--on' : ''}`}
+                  onClick={() => setSector(s)}
+                  title={`${count} atleta(s)`}
+                >
+                  {s} <span className="muted">({count})</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       <ul className="user-list">
-        {rows.map((p) => (
-          <li key={p.uid}>
-            <Link className="user-row" to={`/atletas/${p.uid}`}>
-              <div>
-                <strong>{p.displayName}</strong>
-                <div className="muted small">{p.email}</div>
-              </div>
-              <div className="user-row-meta">
-                <span className="pill">{rolePt(p.role)}</span>
-                {p.sectors?.length > 0 && (
-                  <span className="pill pill-muted">
-                    {p.sectors.join(' · ')}
-                  </span>
-                )}
-                {isManagementRole(p.role) && (
-                  <span className="pill pill-soft">gestão</span>
-                )}
-              </div>
-            </Link>
+        {visible.length === 0 ? (
+          <li className="muted small">
+            Nenhum resultado para os filtros atuais.
           </li>
-        ))}
+        ) : (
+          visible.map((p) => (
+            <li key={p.uid}>
+              <Link className="user-row" to={`/atletas/${p.uid}`}>
+                <div>
+                  <strong>{p.displayName}</strong>
+                  <div className="muted small">{p.email}</div>
+                </div>
+                <div className="user-row-meta">
+                  <span className="pill">{rolePt(p.role)}</span>
+                  {p.sectors?.length > 0 && (
+                    <span className="pill pill-muted">
+                      {p.sectors.join(' · ')}
+                    </span>
+                  )}
+                  {isManagementRole(p.role) && (
+                    <span className="pill pill-soft">gestão</span>
+                  )}
+                </div>
+              </Link>
+            </li>
+          ))
+        )}
       </ul>
     </div>
   )

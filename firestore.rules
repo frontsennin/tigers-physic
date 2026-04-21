@@ -32,17 +32,56 @@ service cloud.firestore {
     match /profiles/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isManagement());
       allow create: if signedIn() && request.auth.uid == uid;
+      function changedKeys() {
+        return request.resource.data.diff(resource.data).affectedKeys();
+      }
+
+      function isAllowedSelfUpdate() {
+        // Jogador pode editar dados pessoais e métricas atuais (não objetivos).
+        return changedKeys().hasOnly([
+          'displayName',
+          'sectors',
+          'heightCm',
+          'weightKg',
+          'bodyFatPct',
+          'leanMassKg',
+          'avgSpeed',
+          'maxSpeed',
+          'updatedAt'
+        ]);
+      }
+
+      function isAllowedPreparadorUpdate() {
+        // Preparador pode editar setores e métricas, incluindo objetivos.
+        return changedKeys().hasOnly([
+          'displayName',
+          'sectors',
+          'heightCm',
+          'weightKg',
+          'bodyFatPct',
+          'leanMassKg',
+          'avgSpeed',
+          'maxSpeed',
+          'targetWeightKg',
+          'targetBodyFatPct',
+          'targetLeanMassKg',
+          'updatedAt'
+        ]);
+      }
+
       allow update: if signedIn() && (
         isAdmin() ||
         (
           isPreparador() &&
           request.resource.data.role == resource.data.role &&
           request.resource.data.email == resource.data.email
+          && isAllowedPreparadorUpdate()
         ) ||
         (
           request.auth.uid == uid &&
           request.resource.data.role == resource.data.role &&
           request.resource.data.email == resource.data.email
+          && isAllowedSelfUpdate()
         )
       );
     }

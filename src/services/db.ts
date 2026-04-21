@@ -147,12 +147,23 @@ export async function listProfiles(): Promise<UserProfile[]> {
   const snap = await getDocs(query(profilesCol(), orderBy('displayName')))
   return snap.docs.map((d) => {
     const x = d.data() as Record<string, unknown>
+    const numOrNull = (v: unknown): number | null =>
+      typeof v === 'number' && Number.isFinite(v) ? v : null
     return {
       uid: d.id,
       email: String(x.email ?? ''),
       displayName: String(x.displayName ?? ''),
       role: normalizeUserRole(x.role),
       sectors: (x.sectors as Sector[]) ?? [],
+      heightCm: numOrNull(x.heightCm),
+      weightKg: numOrNull(x.weightKg),
+      bodyFatPct: numOrNull(x.bodyFatPct),
+      leanMassKg: numOrNull(x.leanMassKg),
+      avgSpeed: numOrNull(x.avgSpeed),
+      maxSpeed: numOrNull(x.maxSpeed),
+      targetWeightKg: numOrNull(x.targetWeightKg),
+      targetBodyFatPct: numOrNull(x.targetBodyFatPct),
+      targetLeanMassKg: numOrNull(x.targetLeanMassKg),
       createdAt: tsToMs(x.createdAt),
       updatedAt: tsToMs(x.updatedAt),
     }
@@ -162,6 +173,29 @@ export async function listProfiles(): Promise<UserProfile[]> {
 export async function updateUserRoleAndSectors(
   uid: string,
   patch: { role?: UserRole; sectors?: Sector[] },
+): Promise<void> {
+  await updateDoc(doc(getDb(), 'profiles', uid), {
+    ...patch,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function updateUserMetrics(
+  uid: string,
+  patch: Partial<
+    Pick<
+      UserProfile,
+      | 'heightCm'
+      | 'weightKg'
+      | 'bodyFatPct'
+      | 'leanMassKg'
+      | 'avgSpeed'
+      | 'maxSpeed'
+      | 'targetWeightKg'
+      | 'targetBodyFatPct'
+      | 'targetLeanMassKg'
+    >
+  >,
 ): Promise<void> {
   await updateDoc(doc(getDb(), 'profiles', uid), {
     ...patch,
@@ -331,12 +365,23 @@ export async function getProfile(uid: string): Promise<UserProfile | null> {
   const snap = await getDoc(doc(getDb(), 'profiles', uid))
   if (!snap.exists()) return null
   const x = snap.data() as Record<string, unknown>
+  const numOrNull = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) ? v : null
   return {
     uid,
     email: String(x.email ?? ''),
     displayName: String(x.displayName ?? ''),
     role: normalizeUserRole(x.role),
     sectors: (x.sectors as Sector[]) ?? [],
+    heightCm: numOrNull(x.heightCm),
+    weightKg: numOrNull(x.weightKg),
+    bodyFatPct: numOrNull(x.bodyFatPct),
+    leanMassKg: numOrNull(x.leanMassKg),
+    avgSpeed: numOrNull(x.avgSpeed),
+    maxSpeed: numOrNull(x.maxSpeed),
+    targetWeightKg: numOrNull(x.targetWeightKg),
+    targetBodyFatPct: numOrNull(x.targetBodyFatPct),
+    targetLeanMassKg: numOrNull(x.targetLeanMassKg),
     createdAt: tsToMs(x.createdAt),
     updatedAt: tsToMs(x.updatedAt),
   }

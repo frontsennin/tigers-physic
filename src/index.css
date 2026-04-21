@@ -377,6 +377,39 @@ textarea {
   color: #cbd4e4;
 }
 
+.pill-button {
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.pill-button:hover {
+  text-decoration: none;
+  border-color: #3a4356;
+}
+
+.pill-button--on {
+  background: rgba(255, 140, 26, 0.22);
+  border-color: rgba(255, 140, 26, 0.45);
+  color: #ffe0be;
+}
+
+.tabs-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tabs-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.tabs-scroll::-webkit-scrollbar-thumb {
+  background: #2a3140;
+  border-radius: 999px;
+}
+
 .pill-role {
   text-transform: uppercase;
   letter-spacing: 0.04em;

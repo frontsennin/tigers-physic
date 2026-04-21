@@ -9,9 +9,10 @@ import {
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { getFirebaseAuth } from '../lib/firebase'
+import { updateUserMetrics } from '../services/db'
 
 export function ProfilePage() {
-  const { profile, user, refreshProfile } = useAuth()
+  const { profile, user, refreshProfile, isPreparador } = useAuth()
   if (!profile) return null
 
   const authUser = user ?? getFirebaseAuth().currentUser
@@ -26,6 +27,27 @@ export function ProfilePage() {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newPassword2, setNewPassword2] = useState('')
+
+  const [metricsBusy, setMetricsBusy] = useState(false)
+  const [heightCm, setHeightCm] = useState(profile.heightCm?.toString() ?? '')
+  const [weightKg, setWeightKg] = useState(profile.weightKg?.toString() ?? '')
+  const [bodyFatPct, setBodyFatPct] = useState(
+    profile.bodyFatPct?.toString() ?? '',
+  )
+  const [leanMassKg, setLeanMassKg] = useState(
+    profile.leanMassKg?.toString() ?? '',
+  )
+  const [avgSpeed, setAvgSpeed] = useState(profile.avgSpeed?.toString() ?? '')
+  const [maxSpeed, setMaxSpeed] = useState(profile.maxSpeed?.toString() ?? '')
+  const [targetWeightKg, setTargetWeightKg] = useState(
+    profile.targetWeightKg?.toString() ?? '',
+  )
+  const [targetBodyFatPct, setTargetBodyFatPct] = useState(
+    profile.targetBodyFatPct?.toString() ?? '',
+  )
+  const [targetLeanMassKg, setTargetLeanMassKg] = useState(
+    profile.targetLeanMassKg?.toString() ?? '',
+  )
 
   const prefersRedirect =
     typeof navigator !== 'undefined' &&
@@ -151,6 +173,44 @@ export function ProfilePage() {
     }
   }
 
+  const parseNumOrNull = (s: string): number | null => {
+    const t = s.trim().replace(',', '.')
+    if (!t) return null
+    const n = Number(t)
+    return Number.isFinite(n) ? n : null
+  }
+
+  async function onSaveMetrics(e: FormEvent) {
+    e.preventDefault()
+    if (!profile?.uid) return
+    setErr(null)
+    setOk(null)
+    setMetricsBusy(true)
+    try {
+      await updateUserMetrics(profile.uid, {
+        heightCm: parseNumOrNull(heightCm),
+        weightKg: parseNumOrNull(weightKg),
+        bodyFatPct: parseNumOrNull(bodyFatPct),
+        leanMassKg: parseNumOrNull(leanMassKg),
+        avgSpeed: parseNumOrNull(avgSpeed),
+        maxSpeed: parseNumOrNull(maxSpeed),
+        ...(isPreparador
+          ? {
+              targetWeightKg: parseNumOrNull(targetWeightKg),
+              targetBodyFatPct: parseNumOrNull(targetBodyFatPct),
+              targetLeanMassKg: parseNumOrNull(targetLeanMassKg),
+            }
+          : {}),
+      })
+      await refreshProfile()
+      setSuccess('Informações físicas atualizadas.')
+    } catch (e) {
+      setFailure(e instanceof Error ? e.message : 'Erro ao salvar informações.')
+    } finally {
+      setMetricsBusy(false)
+    }
+  }
+
   return (
     <div className="page-padding stack-lg">
       <h2>Perfil</h2>
@@ -177,6 +237,125 @@ export function ProfilePage() {
           na ficha do atleta.
         </p>
       </div>
+
+      <form className="card stack" onSubmit={onSaveMetrics}>
+        <h3>Informações físicas</h3>
+        <div className="two-col">
+          <label className="field">
+            <span>Altura (cm)</span>
+            <input
+              inputMode="decimal"
+              value={heightCm}
+              onChange={(e) => setHeightCm(e.target.value)}
+              placeholder="Ex.: 178"
+              disabled={metricsBusy}
+            />
+          </label>
+          <label className="field">
+            <span>Peso (kg)</span>
+            <input
+              inputMode="decimal"
+              value={weightKg}
+              onChange={(e) => setWeightKg(e.target.value)}
+              placeholder="Ex.: 84.5"
+              disabled={metricsBusy}
+            />
+          </label>
+        </div>
+
+        <div className="two-col">
+          <label className="field">
+            <span>BF (%)</span>
+            <input
+              inputMode="decimal"
+              value={bodyFatPct}
+              onChange={(e) => setBodyFatPct(e.target.value)}
+              placeholder="Ex.: 15"
+              disabled={metricsBusy}
+            />
+          </label>
+          <label className="field">
+            <span>Massa magra (kg)</span>
+            <input
+              inputMode="decimal"
+              value={leanMassKg}
+              onChange={(e) => setLeanMassKg(e.target.value)}
+              placeholder="Ex.: 72"
+              disabled={metricsBusy}
+            />
+          </label>
+        </div>
+
+        <div className="two-col">
+          <label className="field">
+            <span>Velocidade média (m/s)</span>
+            <input
+              inputMode="decimal"
+              value={avgSpeed}
+              onChange={(e) => setAvgSpeed(e.target.value)}
+              placeholder="Ex.: 6.4"
+              disabled={metricsBusy}
+            />
+          </label>
+          <label className="field">
+            <span>Velocidade máxima (m/s)</span>
+            <input
+              inputMode="decimal"
+              value={maxSpeed}
+              onChange={(e) => setMaxSpeed(e.target.value)}
+              placeholder="Ex.: 8.2"
+              disabled={metricsBusy}
+            />
+          </label>
+        </div>
+
+        <div className="auth-divider" aria-hidden>
+          Objetivos (preparador)
+        </div>
+
+        <div className="two-col">
+          <label className="field">
+            <span>Peso objetivo (kg)</span>
+            <input
+              inputMode="decimal"
+              value={targetWeightKg}
+              onChange={(e) => setTargetWeightKg(e.target.value)}
+              placeholder="Ex.: 82"
+              disabled={metricsBusy || !isPreparador}
+            />
+          </label>
+          <label className="field">
+            <span>BF objetivo (%)</span>
+            <input
+              inputMode="decimal"
+              value={targetBodyFatPct}
+              onChange={(e) => setTargetBodyFatPct(e.target.value)}
+              placeholder="Ex.: 12"
+              disabled={metricsBusy || !isPreparador}
+            />
+          </label>
+        </div>
+        <label className="field">
+          <span>Massa magra objetivo (kg)</span>
+          <input
+            inputMode="decimal"
+            value={targetLeanMassKg}
+            onChange={(e) => setTargetLeanMassKg(e.target.value)}
+            placeholder="Ex.: 74"
+            disabled={metricsBusy || !isPreparador}
+          />
+        </label>
+        {!isPreparador && (
+          <p className="muted small">
+            Objetivos podem ser definidos apenas pelo <strong>preparador</strong>, mas
+            ficam visíveis aqui para você acompanhar.
+          </p>
+        )}
+
+        <button className="btn-primary" type="submit" disabled={metricsBusy}>
+          {metricsBusy ? 'Salvando…' : 'Salvar informações físicas'}
+        </button>
+      </form>
 
       <div className="card stack">
         <h3>Segurança</h3>
