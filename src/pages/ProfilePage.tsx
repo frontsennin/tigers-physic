@@ -1,8 +1,155 @@
+import {
+  EmailAuthProvider,
+  GoogleAuthProvider,
+  linkWithPopup,
+  linkWithRedirect,
+  reauthenticateWithCredential,
+  updatePassword,
+} from 'firebase/auth'
+import { useState, type FormEvent } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { getFirebaseAuth } from '../lib/firebase'
 
 export function ProfilePage() {
-  const { profile } = useAuth()
+  const { profile, user, refreshProfile } = useAuth()
   if (!profile) return null
+
+  const authUser = user ?? getFirebaseAuth().currentUser
+  const providerIds = authUser?.providerData?.map((p) => p.providerId) ?? []
+  const hasPassword = providerIds.includes('password')
+  const hasGoogle = providerIds.includes('google.com')
+
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [ok, setOk] = useState<string | null>(null)
+
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [newPassword2, setNewPassword2] = useState('')
+
+  const prefersRedirect =
+    typeof navigator !== 'undefined' &&
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      navigator.userAgent,
+    )
+
+  function setSuccess(message: string) {
+    setOk(message)
+    setErr(null)
+  }
+
+  function setFailure(message: string) {
+    setErr(message)
+    setOk(null)
+  }
+
+  async function onLinkGoogle() {
+    if (!authUser) {
+      setFailure('Sessão não encontrada. Recarregue a página e tente novamente.')
+      return
+    }
+    setErr(null)
+    setOk(null)
+    setBusy(true)
+    try {
+      const provider = new GoogleAuthProvider()
+      provider.setCustomParameters({ prompt: 'select_account' })
+
+      if (prefersRedirect) {
+        await linkWithRedirect(authUser, provider)
+        return
+      }
+
+      try {
+        await linkWithPopup(authUser, provider)
+      } catch (e) {
+        const code =
+          e && typeof e === 'object' && 'code' in e ? String((e as any).code) : ''
+        if (
+          code === 'auth/popup-blocked' ||
+          code === 'auth/popup-closed-by-user' ||
+          code === 'auth/operation-not-supported-in-this-environment' ||
+          code === 'auth/unauthorized-domain'
+        ) {
+          await linkWithRedirect(authUser, provider)
+          return
+        }
+        throw e
+      }
+
+      setSuccess('Google vinculado com sucesso.')
+      await refreshProfile()
+    } catch (e) {
+      const code =
+        e && typeof e === 'object' && 'code' in e ? String((e as any).code) : ''
+      if (code === 'auth/credential-already-in-use') {
+        setFailure('Este Google já está vinculado a outra conta.')
+      } else if (code === 'auth/provider-already-linked') {
+        setFailure('Google já está vinculado nesta conta.')
+      } else if (code === 'auth/unauthorized-domain') {
+        setFailure(
+          'Domínio não autorizado no Firebase. Adicione o domínio do Vercel em Authentication → Settings → Authorized domains.',
+        )
+      } else if (e instanceof Error) {
+        setFailure(e.message)
+      } else {
+        setFailure('Não foi possível vincular o Google.')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onChangePassword(e: FormEvent) {
+    e.preventDefault()
+    if (!authUser) {
+      setFailure('Sessão não encontrada. Recarregue a página e tente novamente.')
+      return
+    }
+    if (!authUser.email) {
+      setFailure('Esta conta não possui e-mail. Troca de senha indisponível.')
+      return
+    }
+    if (newPassword.trim().length < 6) {
+      setFailure('A senha nova precisa ter pelo menos 6 caracteres.')
+      return
+    }
+    if (newPassword !== newPassword2) {
+      setFailure('A confirmação da senha nova não confere.')
+      return
+    }
+    setErr(null)
+    setOk(null)
+    setBusy(true)
+    try {
+      const cred = EmailAuthProvider.credential(
+        authUser.email,
+        currentPassword,
+      )
+      await reauthenticateWithCredential(authUser, cred)
+      await updatePassword(authUser, newPassword)
+      setCurrentPassword('')
+      setNewPassword('')
+      setNewPassword2('')
+      setSuccess('Senha atualizada com sucesso.')
+    } catch (e) {
+      const code =
+        e && typeof e === 'object' && 'code' in e ? String((e as any).code) : ''
+      if (code === 'auth/wrong-password') {
+        setFailure('Senha atual incorreta.')
+      } else if (code === 'auth/too-many-requests') {
+        setFailure('Muitas tentativas. Aguarde um pouco e tente novamente.')
+      } else if (code === 'auth/requires-recent-login') {
+        setFailure('Por segurança, faça login novamente e tente de novo.')
+      } else if (e instanceof Error) {
+        setFailure(e.message)
+      } else {
+        setFailure('Não foi possível atualizar a senha.')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="page-padding stack-lg">
@@ -30,6 +177,91 @@ export function ProfilePage() {
           na ficha do atleta.
         </p>
       </div>
+
+      <div className="card stack">
+        <h3>Segurança</h3>
+
+        <p className="muted small">
+          <strong>Métodos de login:</strong>{' '}
+          {[
+            hasGoogle ? 'Google' : null,
+            hasPassword ? 'E-mail e senha' : null,
+          ]
+            .filter(Boolean)
+            .join(' · ') || '—'}
+        </p>
+
+        {!hasGoogle && (
+          <button
+            type="button"
+            className="btn-google"
+            disabled={busy}
+            onClick={() => void onLinkGoogle()}
+          >
+            <GoogleGlyph />
+            {busy ? 'Aguarde…' : 'Vincular Google'}
+          </button>
+        )}
+
+        {hasPassword && (
+          <form className="stack" onSubmit={onChangePassword}>
+            <div className="auth-divider" aria-hidden>
+              Trocar senha
+            </div>
+            <label className="field">
+              <span>Senha atual</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(x) => setCurrentPassword(x.target.value)}
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Nova senha</span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(x) => setNewPassword(x.target.value)}
+                minLength={6}
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Confirmar nova senha</span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={newPassword2}
+                onChange={(x) => setNewPassword2(x.target.value)}
+                minLength={6}
+                required
+              />
+            </label>
+            <button className="btn-primary" type="submit" disabled={busy}>
+              {busy ? 'Salvando…' : 'Atualizar senha'}
+            </button>
+          </form>
+        )}
+
+        {!hasPassword && (
+          <p className="muted small">
+            Troca de senha disponível apenas para contas que usam{' '}
+            <strong>e-mail e senha</strong>.
+          </p>
+        )}
+
+        {(err || ok) && (
+          <p
+            className={err ? 'error-text' : 'muted small'}
+            role={err ? 'alert' : undefined}
+          >
+            {err ?? ok}
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -47,4 +279,27 @@ function roleLabel(role: string): string {
     default:
       return role
   }
+}
+
+function GoogleGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden>
+      <path
+        fill="#FFC107"
+        d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"
+      />
+      <path
+        fill="#FF3D00"
+        d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"
+      />
+      <path
+        fill="#4CAF50"
+        d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"
+      />
+      <path
+        fill="#1976D2"
+        d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"
+      />
+    </svg>
+  )
 }

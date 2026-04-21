@@ -9,17 +9,14 @@ import {
 } from 'react'
 import {
   GoogleAuthProvider,
-  RecaptchaVerifier,
   createUserWithEmailAndPassword,
   getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signInWithPhoneNumber,
   signInWithPopup,
   signInWithRedirect,
   signOut,
   updateProfile,
-  type ConfirmationResult,
   type User,
 } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
@@ -39,10 +36,6 @@ type AuthContextValue = AuthState & {
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, displayName: string) => Promise<void>
   signInWithGoogle: () => Promise<void>
-  sendPhoneVerificationCode: (
-    phoneNumberE164: string,
-    appVerifier: RecaptchaVerifier,
-  ) => Promise<ConfirmationResult>
   logout: () => Promise<void>
   refreshProfile: () => Promise<void>
   isManagement: boolean
@@ -215,20 +208,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await signInWithRedirect(auth, provider)
       return
     }
-    await signInWithPopup(auth, provider)
+    try {
+      await signInWithPopup(auth, provider)
+    } catch (e) {
+      const code =
+        e && typeof e === 'object' && 'code' in e ? String((e as any).code) : ''
+      // Em alguns browsers/hosts (ou com blockers), popup falha.
+      // Redirect é o fluxo mais compatível — tentamos como fallback.
+      if (
+        code === 'auth/popup-blocked' ||
+        code === 'auth/popup-closed-by-user' ||
+        code === 'auth/operation-not-supported-in-this-environment' ||
+        code === 'auth/unauthorized-domain'
+      ) {
+        await signInWithRedirect(auth, provider)
+        return
+      }
+      throw e
+    }
   }, [])
-
-  const sendPhoneVerificationCode = useCallback(
-    async (phoneNumberE164: string, appVerifier: RecaptchaVerifier) => {
-      setError(null)
-      return signInWithPhoneNumber(
-        getFirebaseAuth(),
-        phoneNumberE164,
-        appVerifier,
-      )
-    },
-    [],
-  )
 
   const logout = useCallback(async () => {
     setError(null)
@@ -251,7 +249,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       register,
       signInWithGoogle,
-      sendPhoneVerificationCode,
       logout,
       refreshProfile,
       isManagement: profile ? isManagementRole(profile.role) : false,
@@ -265,7 +262,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       register,
       signInWithGoogle,
-      sendPhoneVerificationCode,
       logout,
       refreshProfile,
     ],

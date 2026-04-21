@@ -1,17 +1,6 @@
-import { RecaptchaVerifier, type ConfirmationResult } from 'firebase/auth'
-import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getFirebaseAuth } from '../lib/firebase'
-
-function phoneToE164(input: string): string {
-  const t = input.trim().replace(/\s/g, '')
-  if (!t) return ''
-  const digitsOnly = t.replace(/\D/g, '')
-  if (!digitsOnly) return ''
-  if (t.startsWith('+')) return `+${digitsOnly}`
-  return `+${digitsOnly}`
-}
 
 function authErrorMessage(err: unknown): string {
   if (err && typeof err === 'object' && 'code' in err) {
@@ -20,22 +9,13 @@ function authErrorMessage(err: unknown): string {
       'auth/popup-closed-by-user':
         'A janela do Google foi fechada antes de concluir o login.',
       'auth/popup-blocked':
-        'O bloqueador de pop-ups impediu o login. Permita pop-ups para este site ou use o SMS.',
+        'O bloqueador de pop-ups impediu o login. Vamos tentar outro método; se persistir, confira o domínio autorizado no Firebase.',
       'auth/cancelled-popup-request':
         'Pedido de login cancelado. Tente novamente.',
       'auth/account-exists-with-different-credential':
         'Já existe uma conta com este e-mail usando outro método de login.',
-      'auth/invalid-phone-number':
-        'Número inválido. Use código do país, por exemplo +351 ou +55.',
-      'auth/too-many-requests':
-        'Demasiados pedidos. Aguarde alguns minutos e tente novamente.',
-      'auth/invalid-verification-code': 'Código SMS incorreto.',
-      'auth/code-expired': 'O código expirou. Peça um novo SMS.',
-      'auth/missing-phone-number': 'Indique o número com código do país (+…).',
-      'auth/quota-exceeded':
-        'Limite de SMS atingido neste projeto. Contacte a equipa técnica.',
-      'auth/captcha-check-failed':
-        'Validação de segurança falhou. Recarregue a página e tente de novo.',
+      'auth/unauthorized-domain':
+        'Domínio não autorizado no Firebase Authentication. Adicione o domínio do Vercel em Authentication → Settings → Authorized domains.',
     }
     if (map[c]) return map[c]
   }
@@ -44,14 +24,7 @@ function authErrorMessage(err: unknown): string {
 }
 
 export function LoginPage() {
-  const {
-    user,
-    login,
-    register,
-    signInWithGoogle,
-    sendPhoneVerificationCode,
-    error,
-  } = useAuth()
+  const { user, login, register, signInWithGoogle, error } = useAuth()
   const loc = useLocation()
   const from = (loc.state as { from?: string } | null)?.from ?? '/'
 
@@ -61,47 +34,22 @@ export function LoginPage() {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [googleBusy, setGoogleBusy] = useState(false)
-  const [phone, setPhone] = useState('')
-  const [smsCode, setSmsCode] = useState('')
-  const [phoneBusy, setPhoneBusy] = useState(false)
-  const [phoneConfirmation, setPhoneConfirmation] =
-    useState<ConfirmationResult | null>(null)
   const [localErr, setLocalErr] = useState<string | null>(null)
-  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null)
-
-  useEffect(() => {
-    return () => {
-      try {
-        recaptchaVerifierRef.current?.clear()
-      } catch {
-        /* ignore */
-      }
-      recaptchaVerifierRef.current = null
-    }
-  }, [])
-
-  function resetRecaptcha() {
-    try {
-      recaptchaVerifierRef.current?.clear()
-    } catch {
-      /* ignore */
-    }
-    recaptchaVerifierRef.current = null
-  }
-
-  function getOrCreateRecaptcha(): RecaptchaVerifier {
-    if (!recaptchaVerifierRef.current) {
-      recaptchaVerifierRef.current = new RecaptchaVerifier(
-        getFirebaseAuth(),
-        'phone-recaptcha',
-        { size: 'invisible' },
-      )
-    }
-    return recaptchaVerifierRef.current
-  }
 
   if (user) {
     return <Navigate to={from} replace />
+  }
+
+  async function onGoogle() {
+    setLocalErr(null)
+    setGoogleBusy(true)
+    try {
+      await signInWithGoogle()
+    } catch (err) {
+      setLocalErr(authErrorMessage(err))
+    } finally {
+      setGoogleBusy(false)
+    }
   }
 
   async function onSubmit(e: FormEvent) {
@@ -121,61 +69,6 @@ export function LoginPage() {
     }
   }
 
-  async function onGoogle() {
-    setLocalErr(null)
-    setGoogleBusy(true)
-    try {
-      await signInWithGoogle()
-    } catch (err) {
-      setLocalErr(authErrorMessage(err))
-    } finally {
-      setGoogleBusy(false)
-    }
-  }
-
-  async function onSendSms(e: FormEvent) {
-    e.preventDefault()
-    setLocalErr(null)
-    const e164 = phoneToE164(phone)
-    if (e164.length < 8) {
-      setLocalErr('Indique o número completo com código do país (+…).')
-      return
-    }
-    setPhoneBusy(true)
-    try {
-      const verifier = getOrCreateRecaptcha()
-      const cr = await sendPhoneVerificationCode(e164, verifier)
-      setPhoneConfirmation(cr)
-      setSmsCode('')
-    } catch (err) {
-      resetRecaptcha()
-      setLocalErr(authErrorMessage(err))
-    } finally {
-      setPhoneBusy(false)
-    }
-  }
-
-  async function onConfirmSms(e: FormEvent) {
-    e.preventDefault()
-    if (!phoneConfirmation) return
-    setLocalErr(null)
-    setPhoneBusy(true)
-    try {
-      await phoneConfirmation.confirm(smsCode.trim())
-    } catch (err) {
-      setLocalErr(authErrorMessage(err))
-    } finally {
-      setPhoneBusy(false)
-    }
-  }
-
-  function onPhoneBack() {
-    setPhoneConfirmation(null)
-    setSmsCode('')
-    resetRecaptcha()
-    setLocalErr(null)
-  }
-
   return (
     <div className="auth-page">
       <div className="auth-card">
@@ -191,77 +84,13 @@ export function LoginPage() {
           <button
             type="button"
             className="btn-google"
-            disabled={googleBusy || busy || phoneBusy}
+            disabled={googleBusy || busy}
             onClick={() => void onGoogle()}
           >
             <GoogleGlyph />
-            {googleBusy ? 'A abrir Google…' : 'Continuar com Google'}
+            {googleBusy ? 'A abrir Google…' : 'Entrar com Google'}
           </button>
         </div>
-
-        <div className="auth-divider" aria-hidden>
-          ou telemóvel (SMS)
-        </div>
-
-        <div id="phone-recaptcha" className="phone-recaptcha-host" />
-
-        {!phoneConfirmation ? (
-          <form className="stack" onSubmit={onSendSms}>
-            <label className="field">
-              <span>Telemóvel</span>
-              <input
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+351 912 345 678"
-              />
-            </label>
-            <button
-              className="btn-ghost"
-              type="submit"
-              disabled={phoneBusy || busy || googleBusy}
-            >
-              {phoneBusy ? 'A enviar…' : 'Enviar código por SMS'}
-            </button>
-          </form>
-        ) : (
-          <form className="stack" onSubmit={onConfirmSms}>
-            <p className="muted small">
-              Introduza o código de 6 dígitos enviado para{' '}
-              <strong>{phoneToE164(phone)}</strong>.
-            </p>
-            <label className="field">
-              <span>Código SMS</span>
-              <input
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                value={smsCode}
-                onChange={(e) => setSmsCode(e.target.value)}
-                placeholder="123456"
-                maxLength={6}
-              />
-            </label>
-            <div className="btn-row">
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={onPhoneBack}
-                disabled={phoneBusy}
-              >
-                Voltar
-              </button>
-              <button
-                className="btn-primary"
-                type="submit"
-                disabled={phoneBusy || smsCode.trim().length < 6}
-              >
-                {phoneBusy ? 'A validar…' : 'Confirmar código'}
-              </button>
-            </div>
-          </form>
-        )}
 
         <div className="auth-divider" aria-hidden>
           ou e-mail
@@ -326,11 +155,7 @@ export function LoginPage() {
             </p>
           )}
 
-          <button
-            className="btn-primary"
-            type="submit"
-            disabled={busy || googleBusy || phoneBusy}
-          >
+          <button className="btn-primary" type="submit" disabled={busy || googleBusy}>
             {busy ? 'Aguarde…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
           </button>
         </form>
@@ -338,8 +163,7 @@ export function LoginPage() {
         <p className="muted small">
           Novos cadastros entram como <strong>Atleta</strong>. Peça a um admin
           para promover preparador/coordenador, ou defina{' '}
-          <code>VITE_BOOTSTRAP_ADMIN_EMAIL</code> /{' '}
-          <code>VITE_BOOTSTRAP_ADMIN_PHONE</code> no ambiente.
+          <code>VITE_BOOTSTRAP_ADMIN_EMAIL</code> no ambiente.
         </p>
       </div>
     </div>

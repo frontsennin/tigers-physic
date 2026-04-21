@@ -25,9 +25,8 @@ Sem `.env` válido, a app mostra a página de configuração (`SetupEnvPage`) em
 
 ## Firebase — serviços a ativar
 
-- **Authentication**: provedor E-mail/senha; opcionalmente **Google** e **Telefone** (SMS), já usados em `/login`.
+- **Authentication**: provedores **Google** e **E-mail/senha**, usados em `/login`.
   - Em **Authentication → Settings → Authorized domains**, inclua o domínio onde a app corre (ex.: `localhost` em desenvolvimento e o domínio de produção no Vercel/Netlify/etc.).
-  - **Telefone**: em desenvolvimento pode usar [números de teste](https://firebase.google.com/docs/auth/web/phone-auth?hl=pt-br#test-with-firebase-console) no console para não gastar quota de SMS.
 - **Firestore**: criar base de dados; publicar `firestore.rules` e `firestore.indexes.json` (ver secção Deploy).
 - **Storage**: publicar `storage.rules`.
 
