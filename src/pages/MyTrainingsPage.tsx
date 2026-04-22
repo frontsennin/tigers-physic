@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { modeLabelShort, weekdaysToShort } from '../data/workoutCatalog'
 import { useAuth } from '../contexts/AuthContext'
+import { CoachTrainingCatalog } from './CoachTrainingCatalogPage'
 import { getCompletion, listTrainingsForUser } from '../services/db'
 import { ANALYSIS_CATEGORIES, type Training } from '../types/models'
 
 type TrainingListRow = {
   training: Training
   completed: boolean
+  mediaPreviewUrl?: string | null
+  hasMedia: boolean
+  athleteNotes?: string | null
 }
 
 const WD_LONG_PT: Record<number, string> = {
@@ -107,9 +111,22 @@ function TrainingListCard({
   row: TrainingListRow
   emphasis?: 'today' | 'default'
 }) {
+  const navigate = useNavigate()
   const t = row.training
   const completed = row.completed
   const rx = t.prescription
+  const mediaPreviewUrl = row.mediaPreviewUrl ?? null
+  const hasMedia = row.hasMedia
+  const athleteNotes = (row.athleteNotes ?? '').trim()
+
+  const clean = (v: unknown): string | null => {
+    if (v === null || v === undefined) return null
+    const s = String(v).trim()
+    if (!s) return null
+    if (s === '-' || s === '—') return null
+    if (s.toLowerCase() === 'null' || s.toLowerCase() === 'undefined') return null
+    return s
+  }
 
   const dayNums =
     t.trainingWeekdays?.length ? t.trainingWeekdays : [t.weekday]
@@ -131,8 +148,32 @@ function TrainingListCard({
       ? 'training-row training-row--rich training-row--today-highlight'
       : 'training-row training-row--rich'
 
+  const setsStr = clean(rx?.sets)
+  const repsStr = clean(rx?.repsOrDuration)
+  const loadStr = showLoad ? clean(rx?.loadNote) : null
+  const rpeStr = clean(rx?.rpeTarget)
+
+  const stats: { label: string; value: string }[] = []
+  if (setsStr) stats.push({ label: 'Séries', value: setsStr })
+  if (repsStr) stats.push({ label: 'Reps / tempo', value: repsStr })
+  if (loadStr) stats.push({ label: 'Carga', value: loadStr })
+  if (rpeStr) stats.push({ label: 'RPE', value: rpeStr })
+
+  const isImageUrl = (url: string): boolean => {
+    const u = url.toLowerCase()
+    return (
+      u.includes('.jpg') ||
+      u.includes('.jpeg') ||
+      u.includes('.png') ||
+      u.includes('.webp') ||
+      u.includes('.gif')
+    )
+  }
+
+  const showThumb = Boolean(mediaPreviewUrl && isImageUrl(mediaPreviewUrl))
+
   return (
-    <Link to={`/treinos/${t.id}`} className={rowClass} aria-label={aria}>
+    <div className={rowClass} aria-label={aria}>
       <div className="training-row-inner">
         <div className="training-card-head">
           <strong className="training-card-title">{t.title}</strong>
@@ -153,46 +194,22 @@ function TrainingListCard({
 
         {rx ? (
           <>
-            <div className="training-card-metrics">
-              <span className="training-metric">
-                <span className="training-metric-value">{String(rx.sets)}</span>
-                <span className="training-metric-label">séries</span>
-              </span>
-              <span className="training-metric-sep" aria-hidden>
-                ×
-              </span>
-              <span className="training-metric training-metric--grow">
-                <span className="training-metric-value">
-                  {rx.repsOrDuration}
-                </span>
-                <span className="training-metric-label">reps / tempo</span>
-              </span>
-              {showLoad && (
-                <>
-                  <span className="training-metric-sep" aria-hidden>
-                    ·
-                  </span>
-                  <span className="training-metric">
-                    <span className="training-metric-value">
-                      {rx.loadNote}
-                    </span>
-                    <span className="training-metric-label">carga</span>
-                  </span>
-                </>
-              )}
-            </div>
+            {stats.length > 0 ? (
+              <div className="training-card-stats" aria-label="Resumo do treino">
+                {stats.slice(0, 4).map((s) => (
+                  <div key={s.label} className="training-stat">
+                    <div className="training-stat-label">{s.label}</div>
+                    <div className="training-stat-value">{s.value}</div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <p className="training-card-mode">
               {modeLabelShort(rx.mode)}
               {rx.restBetweenSets ? (
                 <span className="training-card-meta-hint">
                   {' '}
                   · desc. {rx.restBetweenSets}
-                </span>
-              ) : null}
-              {rx.rpeTarget ? (
-                <span className="training-card-meta-hint">
-                  {' '}
-                  · {rx.rpeTarget}
                 </span>
               ) : null}
               {rx.equipment ? (
@@ -217,6 +234,33 @@ function TrainingListCard({
           </p>
         )}
 
+        {hasMedia ? (
+          showThumb ? (
+            <div className="training-media">
+              <img
+                className="training-media-thumb"
+                src={mediaPreviewUrl!}
+                alt="Prévia da mídia anexada"
+                loading="lazy"
+                decoding="async"
+              />
+              <div className="training-media-meta">
+                <span className="pill pill-soft pill-tiny">Mídia anexada</span>
+              </div>
+            </div>
+          ) : (
+            <div className="training-media training-media--badge">
+              <span className="pill pill-soft pill-tiny">Mídia anexada</span>
+            </div>
+          )
+        ) : null}
+
+        {athleteNotes ? (
+          <p className="training-athlete-notes" aria-label="Observações do atleta">
+            {truncate(athleteNotes, 110)}
+          </p>
+        ) : null}
+
         {focus.length > 0 ? (
           <div className="training-card-chips training-card-chips--focus">
             {focus.map((label) => (
@@ -227,18 +271,31 @@ function TrainingListCard({
           </div>
         ) : null}
       </div>
-      <span className="chev training-chev" aria-hidden>
-        ›
-      </span>
-    </Link>
+
+      <div className="training-card-footer">
+        <button
+          type="button"
+          className="btn-primary training-card-cta"
+          onClick={() =>
+            navigate(`/treinos/${t.id}`, {
+              state: { expectedUserId: t.userId, trainingTitle: t.title },
+            })
+          }
+          aria-label={`Acessar treino: ${t.title}`}
+        >
+          Acessar treino
+        </button>
+      </div>
+    </div>
   )
 }
 
 export function MyTrainingsPage() {
-  const { profile, loading: authLoading } = useAuth()
+  const { profile, loading: authLoading, isPreparador } = useAuth()
   const [rows, setRows] = useState<TrainingListRow[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
+  const [tab, setTab] = useState<'meus' | 'catalogo'>('meus')
 
   useEffect(() => {
     if (!profile?.uid) {
@@ -258,9 +315,22 @@ export function MyTrainingsPage() {
           trainings.map(async (training) => {
             try {
               const c = await getCompletion(training.id, uid)
-              return { training, completed: Boolean(c?.completed) }
+              const mediaUrls = c?.mediaUrls ?? []
+              return {
+                training,
+                completed: Boolean(c?.completed),
+                hasMedia: mediaUrls.length > 0,
+                mediaPreviewUrl: mediaUrls[0] ?? null,
+                athleteNotes: c?.athleteNotes ?? null,
+              }
             } catch {
-              return { training, completed: false }
+              return {
+                training,
+                completed: false,
+                hasMedia: false,
+                mediaPreviewUrl: null,
+                athleteNotes: null,
+              }
             }
           }),
         )
@@ -330,17 +400,46 @@ export function MyTrainingsPage() {
   return (
     <div className="page-padding stack-lg">
       <header className="my-trainings-header">
-        <h2 className="my-trainings-title">Meus treinos</h2>
+        <h2 className="my-trainings-title">
+          {isPreparador ? 'Treinos' : 'Meus treinos'}
+        </h2>
         <p className="muted small my-trainings-lead">
-          <strong>Treino do dia</strong> reúne o que vale para hoje. Em{' '}
-          <strong>Próximos treinos</strong>, a ordem segue os dias da semana a
-          partir de amanhã, priorizando a próxima ocorrência em{' '}
-          <span className="nowrap">dia útil</span> (segunda a sexta) quando o
-          plano também inclui fim de semana.
+          {isPreparador
+            ? 'Alterna entre seus treinos e o catálogo de modelos.'
+            : (
+              <>
+                <strong>Treino do dia</strong> reúne o que vale para hoje. Em{' '}
+                <strong>Próximos treinos</strong>, a ordem segue os dias da semana a
+                partir de amanhã, priorizando a próxima ocorrência em{' '}
+                <span className="nowrap">dia útil</span> (segunda a sexta) quando o
+                plano também inclui fim de semana.
+              </>
+            )}
         </p>
       </header>
 
-      {rows.length === 0 ? (
+      {isPreparador && (
+        <div className="segmented">
+          <button
+            type="button"
+            className={tab === 'meus' ? 'seg seg--on' : 'seg'}
+            onClick={() => setTab('meus')}
+          >
+            Meus treinos
+          </button>
+          <button
+            type="button"
+            className={tab === 'catalogo' ? 'seg seg--on' : 'seg'}
+            onClick={() => setTab('catalogo')}
+          >
+            Catálogo
+          </button>
+        </div>
+      )}
+
+      {isPreparador && tab === 'catalogo' ? (
+        <CoachTrainingCatalog embedded />
+      ) : rows.length === 0 ? (
         <div className="empty-state card">
           <h3 className="empty-state-title">Nenhum treino prescrito</h3>
           <p className="muted small">

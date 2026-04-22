@@ -17,16 +17,33 @@ service cloud.firestore {
       return get(myProfilePath()).data;
     }
 
+    function myRole() {
+      return hasMyProfile() && me().role is string ? me().role.lower() : '';
+    }
+
+    function isPreparadorRole(role) {
+      // Aceita variações comuns vindas de edição manual no console.
+      // Observação: lower() mantém acentos; por isso cobrimos ambas as grafias.
+      return role == 'preparador' ||
+        role == 'prep' ||
+        role == 'preparador fisico' ||
+        role == 'preparador físico';
+    }
+
     function isManagement() {
-      return hasMyProfile() && me().role in ['admin', 'coordenador', 'preparador'];
+      return hasMyProfile() && (
+        myRole() == 'admin' ||
+        myRole() == 'coordenador' ||
+        isPreparadorRole(myRole())
+      );
     }
 
     function isPreparador() {
-      return hasMyProfile() && me().role == 'preparador';
+      return hasMyProfile() && isPreparadorRole(myRole());
     }
 
     function isAdmin() {
-      return hasMyProfile() && me().role == 'admin';
+      return hasMyProfile() && myRole() == 'admin';
     }
 
     match /profiles/{uid} {
@@ -106,12 +123,28 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /trainingTemplates/{id} {
+      allow read: if signedIn() && isPreparador() && resource.data.createdBy == request.auth.uid;
+      allow create: if signedIn() &&
+        isPreparador() &&
+        request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if false;
+    }
+
     match /trainingCompletions/{id} {
       allow read: if signedIn() && (
         resource.data.userId == request.auth.uid || isManagement()
       );
       allow create, update: if signedIn() &&
         request.resource.data.userId == request.auth.uid;
+    }
+
+    match /dailyPoints/{id} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.points in [0, 5, 10];
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
     }
   }
 }

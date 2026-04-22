@@ -34,9 +34,41 @@ export function showAnalysesInOwnNav(role: UserRole): boolean {
   return role !== 'preparador'
 }
 
-export type Sector = 'QB' | 'DL' | 'OL' | 'WR' | 'RB'
+export type Sector =
+  | 'QB'
+  | 'C'
+  | 'RB'
+  | 'WR'
+  | 'TE'
+  | 'OL'
+  | 'DL'
+  | 'EDGE'
+  | 'LB'
+  | 'CB'
+  | 'S'
+  | 'ATH'
 
-export const SECTORS: Sector[] = ['QB', 'DL', 'OL', 'WR', 'RB']
+export const OFFENSE_SECTORS: Sector[] = ['QB', 'C', 'RB', 'WR', 'TE', 'OL']
+
+export const DEFENSE_SECTORS: Sector[] = ['DL', 'EDGE', 'LB', 'CB', 'S']
+
+export const OTHER_SECTORS: Sector[] = ['ATH']
+
+/** Ordem default: ataque → defesa → outros */
+export const SECTORS: Sector[] = [
+  'QB',
+  'C',
+  'RB',
+  'WR',
+  'TE',
+  'OL',
+  'DL',
+  'EDGE',
+  'LB',
+  'CB',
+  'S',
+  'ATH',
+]
 
 /** Dimensões de medida que o preparador usa ao registrar análises */
 export type MeasureKind =
@@ -197,6 +229,19 @@ export type Training = {
   prescription?: TrainingPrescription
 }
 
+/** Modelo de treino criado pelo preparador (catálogo) */
+export type TrainingTemplate = {
+  id: string
+  title: string
+  description: string
+  linkedCategories: AnalysisCategory[]
+  createdBy: string
+  trainingWeekdays: number[]
+  presetId?: string
+  prescription?: TrainingPrescription
+  createdAt: number
+}
+
 export type TrainingCompletion = {
   id: string
   trainingId: string
@@ -204,5 +249,20 @@ export type TrainingCompletion = {
   completed: boolean
   completedAt: number | null
   mediaUrls: string[]
+  /** Texto livre do atleta sobre a execução (dor, lesão, percepção, etc.) */
+  athleteNotes: string | null
+  updatedAt: number
+}
+
+/** Pontos diários do atleta (gamificação). */
+export type DailyPoints = {
+  id: string
+  userId: string
+  displayName: string
+  /** yyyy-MM-dd */
+  dateKey: string
+  /** 0 | 5 | 10 */
+  points: number
+  hasMedia: boolean
   updatedAt: number
 }

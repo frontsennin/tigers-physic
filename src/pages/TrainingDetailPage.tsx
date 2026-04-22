@@ -1,5 +1,5 @@
 import { type ChangeEvent, useEffect, useState } from 'react'
-import { Link, Navigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { modeLabel, weekdaysToShort } from '../data/workoutCatalog'
 import {
@@ -17,12 +17,15 @@ import {
 export function TrainingDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { user, profile, isManagement } = useAuth()
+  const loc = useLocation()
   const [training, setTraining] = useState<Training | null | undefined>(
     undefined,
   )
   const [completed, setCompleted] = useState(false)
   const [mediaUrls, setMediaUrls] = useState<string[]>([])
+  const [athleteNotes, setAthleteNotes] = useState('')
   const [err, setErr] = useState<string | null>(null)
+  const [errCode, setErrCode] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -34,12 +37,16 @@ export function TrainingDetailPage() {
         if (!alive) return
         setTraining(t)
         if (!t) return
-        const c = await getCompletion(id, t.userId)
+        const c = await getCompletion(id, user.uid)
         if (!alive) return
         setCompleted(c?.completed ?? false)
         setMediaUrls(c?.mediaUrls ?? [])
+        setAthleteNotes(c?.athleteNotes ?? '')
       } catch (e) {
         if (!alive) return
+        const code =
+          e && typeof e === 'object' && 'code' in e ? String((e as any).code) : null
+        setErrCode(code)
         setErr(e instanceof Error ? e.message : 'Erro ao carregar')
         setTraining(null)
       }
@@ -54,9 +61,63 @@ export function TrainingDetailPage() {
     return <div className="page-padding muted">Carregando…</div>
   }
   if (!training) {
+    const expectedUserId = (loc.state as any)?.expectedUserId as
+      | string
+      | undefined
+    const trainingTitle = (loc.state as any)?.trainingTitle as string | undefined
+    const isPerm =
+      !!err &&
+      (err.toLowerCase().includes('missing or insufficient permissions') ||
+        err.toLowerCase().includes('permission'))
+    const mismatchHint =
+      isPerm && expectedUserId && profile?.uid && expectedUserId !== profile.uid
+        ? { expectedUserId, currentUid: profile.uid }
+        : null
+
+    const msg = err
+      ? err
+      : `Treino não encontrado (ID: ${id}). Pode ter sido removido ou você não tem permissão.`
     return (
       <div className="page-padding">
-        <p className="error-text">Treino não encontrado.</p>
+        <p className="error-text" role="alert">
+          {msg}
+        </p>
+        {trainingTitle && (
+          <p className="muted small">
+            Treino: <strong>{trainingTitle}</strong>
+          </p>
+        )}
+        {!err && (
+          <p className="muted small">
+            Se você chegou aqui por um link, confirme que o treino ainda existe
+            no Firestore em <code>trainings/{id}</code>.
+          </p>
+        )}
+        {isPerm && mismatchHint && (
+          <div className="card stack">
+            <h3>Diagnóstico rápido</h3>
+            <p className="muted small">
+              Este treino parece pertencer a outro <code>uid</code>.
+            </p>
+            <p className="muted small">
+              <strong>uid do treino:</strong> <code>{mismatchHint.expectedUserId}</code>
+              <br />
+              <strong>seu uid (logado):</strong> <code>{mismatchHint.currentUid}</code>
+            </p>
+            <p className="muted small">
+              Isso acontece quando o atleta troca de método de login e cria outra
+              conta (uid diferente). A correção é <strong>vincular</strong> as
+              credenciais (Google ↔ e-mail/senha) para manter o mesmo uid, ou
+              recriar/reatribuir os treinos para o uid atual.
+            </p>
+          </div>
+        )}
+        {isPerm && !mismatchHint && (
+          <p className="muted small">
+            Dica: confirme que as regras do Firestore foram publicadas e que o
+            treino tem <code>userId</code> igual ao seu <code>auth.uid</code>.
+          </p>
+        )}
         <Link to="/treinos">Voltar</Link>
       </div>
     )
@@ -76,15 +137,21 @@ export function TrainingDetailPage() {
     if (!canToggle || !user) return
     setBusy(true)
     setErr(null)
+    setErrCode(null)
     try {
       await upsertCompletion({
         trainingId: tr.id,
-        userId: tr.userId,
+        userId: user.uid,
         completed: next,
         mediaUrls,
+        athleteNotes: athleteNotes.trim() ? athleteNotes : null,
+        displayName: profile?.displayName ?? '',
       })
       setCompleted(next)
     } catch (e) {
+      const code =
+        e && typeof e === 'object' && 'code' in e ? String((e as any).code) : null
+      setErrCode(code)
       setErr(e instanceof Error ? e.message : 'Erro ao salvar')
     } finally {
       setBusy(false)
@@ -97,6 +164,7 @@ export function TrainingDetailPage() {
     if (!files?.length) return
     setBusy(true)
     setErr(null)
+    setErrCode(null)
     try {
       const urls: string[] = [...mediaUrls]
       for (const f of Array.from(files)) {
@@ -110,11 +178,16 @@ export function TrainingDetailPage() {
       setMediaUrls(urls)
       await upsertCompletion({
         trainingId: tr.id,
-        userId: tr.userId,
+        userId: user.uid,
         completed,
         mediaUrls: urls,
+        athleteNotes: athleteNotes.trim() ? athleteNotes : null,
+        displayName: profile?.displayName ?? '',
       })
     } catch (err) {
+      const code =
+        err && typeof err === 'object' && 'code' in err ? String((err as any).code) : null
+      setErrCode(code)
       setErr(err instanceof Error ? err.message : 'Falha no envio')
     } finally {
       setBusy(false)
@@ -128,10 +201,36 @@ export function TrainingDetailPage() {
     setMediaUrls(urls)
     await upsertCompletion({
       trainingId: tr.id,
-      userId: tr.userId,
+      userId: user?.uid ?? tr.userId,
       completed,
       mediaUrls: urls,
+      athleteNotes: athleteNotes.trim() ? athleteNotes : null,
+      displayName: profile?.displayName ?? '',
     })
+  }
+
+  async function saveNotes(next: string) {
+    if (!isOwner || !canToggle || !user) return
+    setBusy(true)
+    setErr(null)
+    setErrCode(null)
+    try {
+      await upsertCompletion({
+        trainingId: tr.id,
+        userId: user.uid,
+        completed,
+        mediaUrls,
+        athleteNotes: next.trim() ? next : null,
+        displayName: profile?.displayName ?? '',
+      })
+    } catch (e) {
+      const code =
+        e && typeof e === 'object' && 'code' in e ? String((e as any).code) : null
+      setErrCode(code)
+      setErr(e instanceof Error ? e.message : 'Erro ao salvar observações')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const focusLabels = tr.linkedCategories.map(
@@ -244,7 +343,7 @@ export function TrainingDetailPage() {
 
       {err && (
         <p className="error-text" role="alert">
-          {err}
+          {errCode ? `${err} (${errCode})` : err}
         </p>
       )}
 
@@ -262,45 +361,127 @@ export function TrainingDetailPage() {
           </p>
         )}
         {isOwner && (
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={completed}
-              disabled={busy || !canToggle}
-              onChange={(e) => onToggle(e.target.checked)}
-            />
-            <span>Marcar como realizado</span>
-          </label>
+          <div className="toggle-row">
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={completed}
+                disabled={busy || !canToggle}
+                onChange={(e) => onToggle(e.target.checked)}
+              />
+              <span className="toggle-track" aria-hidden>
+                <span className="toggle-thumb" />
+              </span>
+              <span className="toggle-label">
+                {completed ? 'Treino realizado' : 'Marcar como realizado'}
+              </span>
+            </label>
+            {completed && (
+              <span className="pill pill-done" aria-label="Pontuação do dia">
+                {mediaUrls.length > 0 ? '+10' : '+5'}
+              </span>
+            )}
+          </div>
+        )}
+
+        {errCode === 'permission-denied' && (
+          <p className="muted small">
+            <strong>Debug:</strong>{' '}
+            <span className="mono">
+              auth.uid={user?.uid ?? 'null'} · profile.uid={profile?.uid ?? 'null'} · training.userId=
+              {tr.userId}
+            </span>
+          </p>
         )}
 
         {isOwner && canToggle && (
           <div className="stack">
-            <label className="field">
-              <span>Anexar foto ou vídeo</span>
-              <input
-                type="file"
-                accept="image/*,video/*"
-                multiple
+            <div className="stack">
+              <div className="muted small">Observações do atleta</div>
+              <textarea
+                className="input"
+                rows={4}
+                placeholder="Ex.: percepção de esforço, dores, lesões, ajustes, observações importantes…"
+                value={athleteNotes}
                 disabled={busy}
-                onChange={onFiles}
+                onChange={(e) => setAthleteNotes(e.target.value)}
+                onBlur={() => void saveNotes(athleteNotes)}
               />
-            </label>
-            <ul className="media-list">
-              {mediaUrls.map((u) => (
-                <li key={u} className="media-row">
-                  <a href={u} target="_blank" rel="noreferrer">
-                    Abrir mídia
-                  </a>
-                  <button
-                    type="button"
-                    className="btn-ghost"
-                    onClick={() => removeMedia(u)}
-                  >
-                    Remover
-                  </button>
-                </li>
-              ))}
-            </ul>
+              <div className="muted small">
+                Salvamos automaticamente quando você sai do campo.
+              </div>
+            </div>
+
+            <div className="upload-row">
+              <div>
+                <div className="muted small">Evidência (foto/vídeo)</div>
+                <div className="muted small">
+                  {mediaUrls.length > 0
+                    ? `${mediaUrls.length} arquivo(s) anexado(s)`
+                    : 'Nenhum arquivo ainda.'}
+                </div>
+              </div>
+              <label className={busy ? 'upload-btn upload-btn--disabled' : 'upload-btn'}>
+                <input
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  disabled={busy}
+                  onChange={onFiles}
+                />
+                Anexar mídia
+              </label>
+            </div>
+            {mediaUrls.length > 0 && (
+              <div className="training-media-grid" aria-label="Prévia das mídias anexadas">
+                {mediaUrls.map((u) => {
+                  const lower = u.toLowerCase()
+                  const isImg =
+                    lower.includes('.jpg') ||
+                    lower.includes('.jpeg') ||
+                    lower.includes('.png') ||
+                    lower.includes('.webp') ||
+                    lower.includes('.gif')
+                  const isVid =
+                    lower.includes('.mp4') ||
+                    lower.includes('.webm') ||
+                    lower.includes('.mov') ||
+                    lower.includes('.m4v')
+                  return (
+                    <div key={u} className="training-media-item">
+                      {isImg ? (
+                        <img
+                          className="training-media-preview"
+                          src={u}
+                          alt="Mídia anexada"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ) : isVid ? (
+                        <video
+                          className="training-media-preview"
+                          src={u}
+                          controls
+                          preload="metadata"
+                        />
+                      ) : (
+                        <div className="training-media-fallback">
+                          <span className="pill pill-soft pill-tiny">Mídia</span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        className="training-media-remove"
+                        onClick={() => removeMedia(u)}
+                        aria-label="Remover mídia"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -310,16 +491,62 @@ export function TrainingDetailPage() {
               Status:{' '}
               <strong>{completed ? 'Realizado' : 'Pendente'}</strong>
             </p>
+            {athleteNotes.trim() && (
+              <div className="card stack">
+                <h4 style={{ margin: 0 }}>Observações do atleta</h4>
+                <p className="muted small" style={{ margin: 0 }}>
+                  {athleteNotes}
+                </p>
+              </div>
+            )}
             {mediaUrls.length > 0 && (
-              <ul className="media-list">
-                {mediaUrls.map((u) => (
-                  <li key={u}>
-                    <a href={u} target="_blank" rel="noreferrer">
-                      Evidência
+              <div className="training-media-grid" aria-label="Prévia das mídias anexadas">
+                {mediaUrls.map((u) => {
+                  const lower = u.toLowerCase()
+                  const isImg =
+                    lower.includes('.jpg') ||
+                    lower.includes('.jpeg') ||
+                    lower.includes('.png') ||
+                    lower.includes('.webp') ||
+                    lower.includes('.gif')
+                  const isVid =
+                    lower.includes('.mp4') ||
+                    lower.includes('.webm') ||
+                    lower.includes('.mov') ||
+                    lower.includes('.m4v')
+                  return (
+                    <a
+                      key={u}
+                      className="training-media-item"
+                      href={u}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Abrir mídia em nova aba"
+                    >
+                      {isImg ? (
+                        <img
+                          className="training-media-preview"
+                          src={u}
+                          alt="Mídia anexada"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ) : isVid ? (
+                        <video
+                          className="training-media-preview"
+                          src={u}
+                          controls
+                          preload="metadata"
+                        />
+                      ) : (
+                        <div className="training-media-fallback">
+                          <span className="pill pill-soft pill-tiny">Mídia</span>
+                        </div>
+                      )}
                     </a>
-                  </li>
-                ))}
-              </ul>
+                  )
+                })}
+              </div>
             )}
           </div>
         )}

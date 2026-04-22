@@ -1,9 +1,11 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
+  limit,
   orderBy,
   query,
   serverTimestamp,
@@ -22,6 +24,8 @@ import type {
   Training,
   TrainingCompletion,
   TrainingPrescription,
+  TrainingTemplate,
+  DailyPoints,
   UserProfile,
   UserRole,
 } from '../types/models'
@@ -30,12 +34,20 @@ import { normalizeUserRole } from '../types/models'
 const profilesCol = () => collection(getDb(), 'profiles')
 const analysesCol = () => collection(getDb(), 'analyses')
 const trainingsCol = () => collection(getDb(), 'trainings')
+const trainingTemplatesCol = () => collection(getDb(), 'trainingTemplates')
+const dailyPointsCol = () => collection(getDb(), 'dailyPoints')
 function tsToMs(v: unknown): number {
   if (v && typeof v === 'object' && 'toMillis' in v) {
     return (v as Timestamp).toMillis()
   }
   if (typeof v === 'number') return v
   return Date.now()
+}
+
+function dateKeyLocal(ms: number): string {
+  const d = new Date(ms)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -305,6 +317,59 @@ export async function addTraining(input: {
   return ref.id
 }
 
+function mapTrainingTemplateDoc(
+  id: string,
+  x: Record<string, unknown>,
+): TrainingTemplate {
+  return {
+    id,
+    title: String(x.title ?? ''),
+    description: String(x.description ?? ''),
+    linkedCategories: (x.linkedCategories as TrainingTemplate['linkedCategories']) ?? [],
+    createdBy: String(x.createdBy ?? ''),
+    trainingWeekdays: (x.trainingWeekdays as number[] | undefined) ?? [],
+    presetId: x.presetId != null ? String(x.presetId) : undefined,
+    prescription: parsePrescription(x.prescription),
+    createdAt: tsToMs(x.createdAt),
+  }
+}
+
+export async function listTrainingTemplatesForCoach(
+  coachUid: string,
+): Promise<TrainingTemplate[]> {
+  const snap = await getDocs(
+    query(trainingTemplatesCol(), where('createdBy', '==', coachUid)),
+  )
+  const rows = snap.docs.map((d) =>
+    mapTrainingTemplateDoc(d.id, d.data() as Record<string, unknown>),
+  )
+  rows.sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'))
+  return rows
+}
+
+export async function addTrainingTemplate(input: {
+  title: string
+  description: string
+  linkedCategories: AnalysisCategory[]
+  createdBy: string
+  trainingWeekdays: number[]
+  presetId?: string
+  prescription?: TrainingPrescription
+}): Promise<string> {
+  const payload: Record<string, unknown> = omitUndefinedDeep({
+    title: input.title,
+    description: input.description,
+    linkedCategories: input.linkedCategories,
+    createdBy: input.createdBy,
+    trainingWeekdays: input.trainingWeekdays,
+    presetId: input.presetId,
+    prescription: input.prescription,
+    createdAt: serverTimestamp(),
+  }) as Record<string, unknown>
+  const ref = await addDoc(trainingTemplatesCol(), payload)
+  return ref.id
+}
+
 function completionDocId(trainingId: string, userId: string) {
   return `${trainingId}_${userId}`
 }
@@ -313,12 +378,23 @@ export async function getCompletion(
   trainingId: string,
   userId: string,
 ): Promise<TrainingCompletion | null> {
-  const id = completionDocId(trainingId, userId)
-  const snap = await getDoc(doc(getDb(), 'trainingCompletions', id))
-  if (!snap.exists()) return null
-  const x = snap.data() as Record<string, unknown>
+  // Importante: getDoc em um documento inexistente pode resultar em
+  // permission-denied dependendo da rule (resource == null). Usamos query
+  // por userId/trainingId para retornar vazio sem erro.
+  const snap = await getDocs(
+    query(
+      collection(getDb(), 'trainingCompletions'),
+      where('userId', '==', userId),
+      where('trainingId', '==', trainingId),
+      limit(1),
+    ),
+  )
+  const first = snap.docs[0]
+  if (!first) return null
+  const x = first.data() as Record<string, unknown>
+  const notesRaw = x.athleteNotes
   return {
-    id: snap.id,
+    id: first.id,
     trainingId: String(x.trainingId),
     userId: String(x.userId),
     completed: Boolean(x.completed),
@@ -326,6 +402,12 @@ export async function getCompletion(
     mediaUrls: Array.isArray(x.mediaUrls)
       ? (x.mediaUrls as string[]).filter(Boolean)
       : [],
+    athleteNotes:
+      notesRaw == null
+        ? null
+        : String(notesRaw).trim()
+          ? String(notesRaw)
+          : null,
     updatedAt: tsToMs(x.updatedAt),
   }
 }
@@ -335,17 +417,21 @@ export async function upsertCompletion(input: {
   userId: string
   completed: boolean
   mediaUrls?: string[]
+  athleteNotes?: string | null
+  displayName?: string
 }): Promise<void> {
   const id = completionDocId(input.trainingId, input.userId)
   const ref = doc(getDb(), 'trainingCompletions', id)
-  const existing = await getDoc(ref)
-  const prev = existing.exists()
-    ? (existing.data() as Record<string, unknown>)
-    : null
-  const mediaUrls =
-    input.mediaUrls ??
-    (prev?.mediaUrls as string[] | undefined) ??
-    []
+  // Não fazemos getDoc aqui: quando o documento ainda não existe,
+  // a leitura pode ser negada pelas rules (resource == null).
+  // A UI já envia a lista atual de `mediaUrls`, então basta persistir.
+  const mediaUrls = input.mediaUrls ?? []
+  const athleteNotes =
+    input.athleteNotes === undefined
+      ? undefined
+      : input.athleteNotes == null
+        ? null
+        : String(input.athleteNotes)
 
   await setDoc(
     ref,
@@ -355,10 +441,65 @@ export async function upsertCompletion(input: {
       completed: input.completed,
       completedAt: input.completed ? serverTimestamp() : null,
       mediaUrls,
+      athleteNotes,
       updatedAt: serverTimestamp(),
     },
     { merge: true },
   )
+
+  // Gamificação: pontos por dia (não por treino).
+  // IMPORTANT: não deixamos a gamificação impedir o check do treino.
+  try {
+    const dayKey = dateKeyLocal(Date.now())
+    const dpId = `${input.userId}_${dayKey}`
+    const dpRef = doc(getDb(), 'dailyPoints', dpId)
+    if (!input.completed) {
+      await deleteDoc(dpRef).catch(() => {})
+      return
+    }
+    const hasMedia = (mediaUrls?.length ?? 0) > 0
+    const points = hasMedia ? 10 : 5
+    await setDoc(
+      dpRef,
+      {
+        userId: input.userId,
+        displayName: input.displayName ?? '',
+        dateKey: dayKey,
+        points,
+        hasMedia,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    )
+  } catch {
+    // ignore (ranking pode estar sem permissão/índice publicado)
+  }
+}
+
+export async function listDailyPointsRange(input: {
+  startDateKey: string
+  endDateKey: string
+}): Promise<DailyPoints[]> {
+  const snap = await getDocs(
+    query(
+      dailyPointsCol(),
+      where('dateKey', '>=', input.startDateKey),
+      where('dateKey', '<=', input.endDateKey),
+      orderBy('dateKey', 'desc'),
+    ),
+  )
+  return snap.docs.map((d) => {
+    const x = d.data() as Record<string, unknown>
+    return {
+      id: d.id,
+      userId: String(x.userId ?? ''),
+      displayName: String(x.displayName ?? ''),
+      dateKey: String(x.dateKey ?? ''),
+      points: typeof x.points === 'number' ? x.points : 0,
+      hasMedia: Boolean(x.hasMedia),
+      updatedAt: tsToMs(x.updatedAt),
+    }
+  })
 }
 
 export async function getProfile(uid: string): Promise<UserProfile | null> {

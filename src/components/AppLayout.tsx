@@ -18,7 +18,15 @@ export function AppLayout() {
           onClick={() => navigate('/')}
           aria-label="Início Tigers Physic"
         >
-          <span className="brand-mark" />
+          <img
+            className="brand-mark"
+            src="/tiggers.jpg"
+            alt="Tigers"
+            width={28}
+            height={28}
+            loading="eager"
+            decoding="async"
+          />
           <span className="brand-text">
             <strong>Tigers</strong>
             <small>Physic</small>

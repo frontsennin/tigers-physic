@@ -3,7 +3,13 @@ import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { listProfiles } from '../services/db'
 import type { UserProfile } from '../types/models'
-import { SECTORS, isManagementRole, type Sector } from '../types/models'
+import {
+  DEFENSE_SECTORS,
+  OFFENSE_SECTORS,
+  OTHER_SECTORS,
+  isManagementRole,
+  type Sector,
+} from '../types/models'
 
 export function PlayersPage() {
   const { isManagement } = useAuth()
@@ -83,6 +89,13 @@ export function PlayersPage() {
         treinos.
       </p>
 
+      <Link className="card stack" to="/ranking">
+        <h3>Ranking</h3>
+        <p className="muted small">
+          Quem treinou mais na semana (pontos por dia + evidência).
+        </p>
+      </Link>
+
       <div className="segmented">
         <button
           type="button"
@@ -111,29 +124,73 @@ export function PlayersPage() {
         </label>
 
         {group === 'athletes' && (
-          <div className="tabs-scroll" aria-label="Filtrar por setor">
-            <button
-              type="button"
-              className={`pill pill-button ${sector === 'all' ? 'pill-button--on' : ''}`}
-              onClick={() => setSector('all')}
-            >
-              Todos
-            </button>
-            {SECTORS.map((s) => {
-              const count = athletes.filter((p) => (p.sectors ?? []).includes(s))
-                .length
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  className={`pill pill-button ${sector === s ? 'pill-button--on' : ''}`}
-                  onClick={() => setSector(s)}
-                  title={`${count} atleta(s)`}
-                >
-                  {s} <span className="muted">({count})</span>
-                </button>
-              )
-            })}
+          <div className="stack">
+            <div className="tabs-scroll" aria-label="Filtrar por setor">
+              <button
+                type="button"
+                className={`pill pill-button ${sector === 'all' ? 'pill-button--on' : ''}`}
+                onClick={() => setSector('all')}
+              >
+                Todos
+              </button>
+            </div>
+
+            <div className="tabs-scroll" aria-label="Setores de ataque">
+              {OFFENSE_SECTORS.map((s) => {
+                const count = athletes.filter((p) =>
+                  (p.sectors ?? []).includes(s),
+                ).length
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`pill pill-button ${sector === s ? 'pill-button--on' : ''}`}
+                    onClick={() => setSector(s)}
+                    title={`${count} atleta(s)`}
+                  >
+                    {s} <span className="muted">({count})</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="tabs-scroll" aria-label="Setores de defesa">
+              {DEFENSE_SECTORS.map((s) => {
+                const count = athletes.filter((p) =>
+                  (p.sectors ?? []).includes(s),
+                ).length
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`pill pill-button ${sector === s ? 'pill-button--on' : ''}`}
+                    onClick={() => setSector(s)}
+                    title={`${count} atleta(s)`}
+                  >
+                    {s} <span className="muted">({count})</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="tabs-scroll" aria-label="Outros setores">
+              {OTHER_SECTORS.map((s) => {
+                const count = athletes.filter((p) =>
+                  (p.sectors ?? []).includes(s),
+                ).length
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`pill pill-button ${sector === s ? 'pill-button--on' : ''}`}
+                    onClick={() => setSector(s)}
+                    title={`${count} atleta(s)`}
+                  >
+                    {s} <span className="muted">({count})</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
         )}
       </div>

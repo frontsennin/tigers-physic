@@ -43,3 +43,26 @@ export function ManagementRoute() {
 
   return <Outlet />
 }
+
+export function PreparadorRoute() {
+  const { profile, loading, isPreparador } = useAuth()
+  const loc = useLocation()
+
+  if (loading) {
+    return (
+      <div className="screen-center muted" aria-busy="true">
+        Carregando…
+      </div>
+    )
+  }
+
+  if (!profile) {
+    return <Navigate to="/login" replace />
+  }
+
+  if (!isPreparador) {
+    return <Navigate to="/" replace state={{ from: loc.pathname }} />
+  }
+
+  return <Outlet />
+}

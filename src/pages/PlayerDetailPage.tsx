@@ -13,6 +13,7 @@ import {
   getProfile,
   listAnalysesForUser,
   listTrainingsForUser,
+  listTrainingTemplatesForCoach,
   updateUserRoleAndSectors,
   updateUserMetrics,
 } from '../services/db'
@@ -22,8 +23,11 @@ import {
   type MeasureKind,
   type PrescriptionMode,
   type Sector,
-  SECTORS,
+  DEFENSE_SECTORS,
+  OFFENSE_SECTORS,
+  OTHER_SECTORS,
   type TrainingPrescription,
+  type TrainingTemplate,
   type UserRole,
 } from '../types/models'
 import {
@@ -264,17 +268,58 @@ export function PlayerDetailPage() {
               {canEditSectors && (
                 <fieldset className="field">
                   <legend>Setores (posições)</legend>
-                  <div className="chips">
-                    {SECTORS.map((s) => (
-                      <label key={s} className="chip">
-                        <input
-                          type="checkbox"
-                          checked={sectors.includes(s)}
-                          onChange={() => toggleSector(s)}
-                        />
-                        {s}
-                      </label>
-                    ))}
+                  <div className="stack">
+                    <div>
+                      <div className="muted small" style={{ marginBottom: 6 }}>
+                        Ataque
+                      </div>
+                      <div className="chips">
+                        {OFFENSE_SECTORS.map((s) => (
+                          <label key={s} className="chip">
+                            <input
+                              type="checkbox"
+                              checked={sectors.includes(s)}
+                              onChange={() => toggleSector(s)}
+                            />
+                            {s}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="muted small" style={{ marginBottom: 6 }}>
+                        Defesa
+                      </div>
+                      <div className="chips">
+                        {DEFENSE_SECTORS.map((s) => (
+                          <label key={s} className="chip">
+                            <input
+                              type="checkbox"
+                              checked={sectors.includes(s)}
+                              onChange={() => toggleSector(s)}
+                            />
+                            {s}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="muted small" style={{ marginBottom: 6 }}>
+                        Outros
+                      </div>
+                      <div className="chips">
+                        {OTHER_SECTORS.map((s) => (
+                          <label key={s} className="chip">
+                            <input
+                              type="checkbox"
+                              checked={sectors.includes(s)}
+                              onChange={() => toggleSector(s)}
+                            />
+                            {s}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </fieldset>
               )}
@@ -637,11 +682,40 @@ function useTrainingForm(
   const [busy, setBusy] = useState(false)
   const [catalogPreset, setCatalogPreset] = useState<WorkoutPreset | null>(null)
   const [creating, setCreating] = useState(false)
+  const [catalogOpen, setCatalogOpen] = useState(false)
+  const [catalogRows, setCatalogRows] = useState<TrainingTemplate[]>([])
+  const [catalogErr, setCatalogErr] = useState<string | null>(null)
+  const [catalogLoading, setCatalogLoading] = useState(false)
 
   useEffect(() => {
     if (!uid) return
     listTrainingsForUser(uid).then(setList).catch(console.error)
   }, [uid, busy])
+
+  useEffect(() => {
+    if (!createdBy || !isPreparador) return
+    if (!catalogOpen) return
+    let alive = true
+    setCatalogLoading(true)
+    setCatalogErr(null)
+    listTrainingTemplatesForCoach(createdBy)
+      .then((rows) => {
+        if (!alive) return
+        setCatalogRows(rows)
+      })
+      .catch((e) => {
+        if (!alive) return
+        setCatalogErr(
+          e instanceof Error ? e.message : 'Erro ao carregar catálogo.',
+        )
+      })
+      .finally(() => {
+        if (alive) setCatalogLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [catalogOpen, createdBy, isPreparador])
 
   useEffect(() => {
     if (
@@ -685,6 +759,83 @@ function useTrainingForm(
     setTrainingWeekdays([...new Set(p.suggestedWeekdays)].sort((a, b) => a - b))
     setLinked([...new Set(p.linkedCategories)])
     setFormErr(null)
+  }
+
+  function applyTemplateToForm(t: TrainingTemplate) {
+    setCatalogPreset(null)
+    setExerciseName(t.title)
+    setRxMode((t.prescription?.mode as PrescriptionMode) ?? 'reps_load')
+    setSetsStr(String(t.prescription?.sets ?? '4'))
+    setRepsStr(String(t.prescription?.repsOrDuration ?? '8–12'))
+    setLoadStr(t.prescription?.loadNote ?? '')
+    setObjectiveStr(t.prescription?.objective ?? '')
+    setTrainingWeekdays(
+      (t.trainingWeekdays?.length ? t.trainingWeekdays : [1, 3, 5]).slice(),
+    )
+    setLinked([...(t.linkedCategories ?? [])])
+    setRpeStr(t.prescription?.rpeTarget ?? '')
+    setRestStr(t.prescription?.restBetweenSets ?? '')
+    setEquipStr(t.prescription?.equipment ?? '')
+    setExtrasStr(t.prescription?.coachNotesExtra ?? '')
+    setFormErr(null)
+    setCreating(true)
+    setCatalogOpen(false)
+  }
+
+  async function assignTemplateToAthlete(t: TrainingTemplate) {
+    if (!uid || !createdBy || !isPreparador) return
+    setFormErr(null)
+    const now = Date.now()
+    const sortedDays =
+      t.trainingWeekdays?.length ? [...t.trainingWeekdays].sort((a, b) => a - b) : [weekdayFromMs(now)]
+
+    const rx = t.prescription
+    const fallbackRx: TrainingPrescription = {
+      mode: 'reps_load',
+      sets: '4',
+      repsOrDuration: '8–12',
+      loadNote: null,
+      objective: '',
+      suggestedWeekdays: sortedDays,
+    }
+    const prescription: TrainingPrescription = {
+      ...fallbackRx,
+      ...(rx ?? {}),
+      suggestedWeekdays: sortedDays,
+    }
+
+    const description = composeTrainingDescriptionForSave({
+      mode: prescription.mode as PrescriptionMode,
+      sets: String(prescription.sets),
+      repsOrDuration: prescription.repsOrDuration,
+      loadNote: prescription.loadNote ?? '',
+      objective: prescription.objective ?? '',
+      weekdays: sortedDays,
+      restBetweenSets: prescription.restBetweenSets ?? '',
+      rpeTarget: prescription.rpeTarget ?? '',
+      equipment: prescription.equipment ?? '',
+      coachNotesExtra: prescription.coachNotesExtra ?? '',
+    })
+
+    setBusy(true)
+    try {
+      await addTraining({
+        userId: uid,
+        title: t.title,
+        description,
+        linkedCategories: t.linkedCategories ?? [],
+        scheduledAt: now,
+        weekday: weekdayFromMs(now),
+        dateKey: dateKeyFromMs(now),
+        createdBy,
+        trainingWeekdays: sortedDays,
+        presetId: t.presetId,
+        prescription,
+      })
+      setCatalogOpen(false)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function submit(e: FormEvent) {
@@ -773,19 +924,95 @@ function useTrainingForm(
         <div className="btn-row" style={{ justifyContent: 'space-between' }}>
           <h3 style={{ margin: 0 }}>Treinos</h3>
           {isPreparador && !creating && (
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => setCreating(true)}
-            >
-              Criar novo
-            </button>
+            <div className="btn-row">
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setCatalogOpen((v) => !v)}
+                disabled={busy}
+              >
+                Usar do catálogo
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setCreating(true)}
+                disabled={busy}
+              >
+                Criar novo
+              </button>
+            </div>
           )}
         </div>
         <p className="muted small">
           Treinos prescritos e dias sugeridos de execução.
         </p>
       </div>
+
+      {isPreparador && catalogOpen && (
+        <div className="card stack">
+          <div className="btn-row" style={{ justifyContent: 'space-between' }}>
+            <h4 style={{ margin: 0 }}>Catálogo</h4>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setCatalogOpen(false)}
+              disabled={busy}
+            >
+              Fechar
+            </button>
+          </div>
+          {catalogLoading ? (
+            <p className="muted">Carregando modelos…</p>
+          ) : catalogErr ? (
+            <p className="error-text" role="alert">
+              {catalogErr}
+            </p>
+          ) : catalogRows.length === 0 ? (
+            <p className="muted small">Nenhum modelo no catálogo ainda.</p>
+          ) : (
+            <ul className="training-list">
+              {catalogRows.map((t) => (
+                <li key={t.id} className="training-item">
+                  <div className="training-row training-row--rich">
+                    <div className="training-row-inner">
+                      <div className="training-card-head">
+                        <strong className="training-card-title">{t.title}</strong>
+                        {t.trainingWeekdays?.length ? (
+                          <span className="pill pill-day">
+                            {weekdaysToShort(t.trainingWeekdays)}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="muted small">
+                        {t.prescription?.objective || 'Sem objetivo definido.'}
+                      </p>
+                      <div className="btn-row">
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={() => void assignTemplateToAthlete(t)}
+                          disabled={busy}
+                        >
+                          Atribuir
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          onClick={() => applyTemplateToForm(t)}
+                          disabled={busy}
+                        >
+                          Editar antes
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <ul className="training-list">
         {list.map((t) => (
           <li key={t.id} className="training-item">
