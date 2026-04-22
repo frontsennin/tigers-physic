@@ -178,25 +178,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     // Processa o retorno do redirect em paralelo, mas sem bloquear o listener.
-    // Em alguns hosts o redirect pode demorar mais que alguns segundos; fazemos retries.
+    // IMPORTANTE: em alguns hosts/domínios o retorno pode demorar; NÃO usamos timeout aqui.
     void (async () => {
-      const tryOnce = async (timeoutMs: number) => {
-        return await Promise.race([
-          getRedirectResult(auth),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
-        ])
-      }
-
       try {
-        // 1) tenta rápido
-        let cred = await tryOnce(4000)
-        // 2) se não veio, tenta mais tempo (Vercel/custom domain pode demorar)
-        if (!cred) cred = await tryOnce(15000)
-        // 3) última tentativa curta (alguns browsers só resolvem após hidratação completa)
-        if (!cred) {
-          await new Promise((r) => setTimeout(r, 800))
-          cred = await tryOnce(4000)
-        }
+        const cred = await getRedirectResult(auth)
 
         if (!active || !cred?.user) return
         setError(null)
