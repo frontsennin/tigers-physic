@@ -73,7 +73,15 @@ export function LoginPage() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-brand">
-          <span className="brand-mark brand-mark--lg" />
+          <img
+            className="brand-mark brand-mark--lg"
+            src="/tiggers.jpg"
+            alt="Tigers"
+            width={44}
+            height={44}
+            loading="eager"
+            decoding="async"
+          />
           <div>
             <h1>Tigers Physic</h1>
             <p className="muted small">Flag Football — preparação física</p>

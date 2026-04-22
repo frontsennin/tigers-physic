@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { modeLabelShort, weekdaysToShort } from '../data/workoutCatalog'
 import { useAuth } from '../contexts/AuthContext'
 import { CoachTrainingCatalog } from './CoachTrainingCatalogPage'
-import { getCompletion, listTrainingsForUser } from '../services/db'
-import { ANALYSIS_CATEGORIES, type Training } from '../types/models'
+import {
+  getCompletion,
+  listCompletionsForUser,
+  listProfiles,
+  listTrainingsForUser,
+} from '../services/db'
+import { ANALYSIS_CATEGORIES, type Training, type TrainingCompletion } from '../types/models'
 
 type TrainingListRow = {
   training: Training
@@ -25,6 +30,34 @@ const WD_LONG_PT: Record<number, string> = {
 }
 
 const BUSINESS_WD = new Set([1, 2, 3, 4, 5])
+
+const WD_SHORT_PT: Record<number, string> = {
+  0: 'Dom',
+  1: 'Seg',
+  2: 'Ter',
+  3: 'Qua',
+  4: 'Qui',
+  5: 'Sex',
+  6: 'Sáb',
+}
+
+function pad(n: number) {
+  return String(n).padStart(2, '0')
+}
+
+function dateKeyLocal(ms: number): string {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+function startOfWeekMondayMs(now: Date): number {
+  const d = new Date(now)
+  const day = d.getDay() // 0 dom ... 6 sab
+  const diff = day === 0 ? 6 : day - 1 // segunda como início
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - diff)
+  return d.getTime()
+}
 
 function weekDaysForTraining(t: Training): number[] {
   const w = t.trainingWeekdays?.length ? t.trainingWeekdays : [t.weekday]
@@ -291,11 +324,22 @@ function TrainingListCard({
 }
 
 export function MyTrainingsPage() {
-  const { profile, loading: authLoading, isPreparador } = useAuth()
+  const { profile, loading: authLoading, isPreparador, isManagement } = useAuth()
   const [rows, setRows] = useState<TrainingListRow[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
-  const [tab, setTab] = useState<'meus' | 'catalogo'>('meus')
+  const [tab, setTab] = useState<'meus' | 'catalogo' | 'jogadores'>('meus')
+
+  const [playersLoading, setPlayersLoading] = useState(false)
+  const [playersErr, setPlayersErr] = useState<string | null>(null)
+  const [players, setPlayers] = useState<
+    {
+      uid: string
+      displayName: string
+      trainings: Training[]
+      completionsByTrainingId: Map<string, TrainingCompletion>
+    }[]
+  >([])
 
   useEffect(() => {
     if (!profile?.uid) {
@@ -350,6 +394,51 @@ export function MyTrainingsPage() {
       alive = false
     }
   }, [profile?.uid])
+
+  useEffect(() => {
+    if (!isManagement) return
+    if (tab !== 'jogadores') return
+    let alive = true
+    setPlayersLoading(true)
+    setPlayersErr(null)
+    ;(async () => {
+      try {
+        const all = await listProfiles()
+        const athletes = all
+          .filter((p) => p.role === 'jogador')
+          .sort((a, b) => a.displayName.localeCompare(b.displayName, 'pt-BR'))
+
+        const payload = await Promise.all(
+          athletes.map(async (p) => {
+            const [trainings, completions] = await Promise.all([
+              listTrainingsForUser(p.uid),
+              listCompletionsForUser(p.uid),
+            ])
+            const map = new Map<string, TrainingCompletion>()
+            for (const c of completions) map.set(c.trainingId, c)
+            return {
+              uid: p.uid,
+              displayName: p.displayName || 'Atleta',
+              trainings,
+              completionsByTrainingId: map,
+            }
+          }),
+        )
+
+        if (!alive) return
+        setPlayers(payload)
+      } catch (e) {
+        if (!alive) return
+        setPlayersErr(e instanceof Error ? e.message : 'Erro ao carregar jogadores.')
+        setPlayers([])
+      } finally {
+        if (alive) setPlayersLoading(false)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [isManagement, tab])
 
   const todayWd = new Date().getDay()
   const { todayList, upcomingGroups } = useMemo(
@@ -418,26 +507,43 @@ export function MyTrainingsPage() {
         </p>
       </header>
 
-      {isPreparador && (
+      {(isPreparador || isManagement) && (
         <div className="segmented">
           <button
             type="button"
             className={tab === 'meus' ? 'seg seg--on' : 'seg'}
             onClick={() => setTab('meus')}
           >
-            Meus treinos
+            {isPreparador ? 'Meus treinos' : 'Treinos'}
           </button>
-          <button
-            type="button"
-            className={tab === 'catalogo' ? 'seg seg--on' : 'seg'}
-            onClick={() => setTab('catalogo')}
-          >
-            Catálogo
-          </button>
+          {isPreparador && (
+            <button
+              type="button"
+              className={tab === 'catalogo' ? 'seg seg--on' : 'seg'}
+              onClick={() => setTab('catalogo')}
+            >
+              Catálogo
+            </button>
+          )}
+          {isManagement && (
+            <button
+              type="button"
+              className={tab === 'jogadores' ? 'seg seg--on' : 'seg'}
+              onClick={() => setTab('jogadores')}
+            >
+              Jogadores
+            </button>
+          )}
         </div>
       )}
 
-      {isPreparador && tab === 'catalogo' ? (
+      {isManagement && tab === 'jogadores' ? (
+        <StaffPlayersWeekView
+          loading={playersLoading}
+          err={playersErr}
+          players={players}
+        />
+      ) : isPreparador && tab === 'catalogo' ? (
         <CoachTrainingCatalog embedded />
       ) : rows.length === 0 ? (
         <div className="empty-state card">
@@ -510,6 +616,162 @@ export function MyTrainingsPage() {
           </section>
         </div>
       )}
+    </div>
+  )
+}
+
+function StaffPlayersWeekView({
+  loading,
+  err,
+  players,
+}: {
+  loading: boolean
+  err: string | null
+  players: {
+    uid: string
+    displayName: string
+    trainings: Training[]
+    completionsByTrainingId: Map<string, TrainingCompletion>
+  }[]
+}) {
+  const now = new Date()
+  const weekStart = startOfWeekMondayMs(now)
+  const days = Array.from({ length: 7 }).map((_, i) => {
+    const ms = weekStart + i * 24 * 60 * 60 * 1000
+    const d = new Date(ms)
+    const wd = d.getDay()
+    return {
+      ms,
+      wd,
+      key: dateKeyLocal(ms),
+      label: `${WD_SHORT_PT[wd]} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`,
+      isToday: dateKeyLocal(Date.now()) === dateKeyLocal(ms),
+      isPast: ms < new Date().setHours(0, 0, 0, 0),
+    }
+  })
+
+  const completionDoneOnDay = (c: TrainingCompletion | undefined, dayKey: string) =>
+    Boolean(c?.completed && c.completedAt && dateKeyLocal(c.completedAt) === dayKey)
+
+  if (loading) return <p className="muted">Carregando jogadores…</p>
+  if (err) return <p className="error-text">{err}</p>
+  if (players.length === 0)
+    return (
+      <div className="empty-state card">
+        <h3 className="empty-state-title">Sem atletas</h3>
+        <p className="muted small">Nenhum jogador encontrado para exibir treinos.</p>
+      </div>
+    )
+
+  return (
+    <div className="stack-lg">
+      <div className="card stack">
+        <h3>Treinos dos jogadores (semana)</h3>
+        <p className="muted small" style={{ margin: 0 }}>
+          A comissão consegue <strong>visualizar</strong> a agenda e a aderência,
+          mas não acessa o detalhe do treino por aqui.
+        </p>
+      </div>
+
+      {players.map((p) => (
+        <div key={p.uid} className="card stack">
+          <div className="staff-week-head">
+            <strong>{p.displayName}</strong>
+            <span className="pill pill-soft">semana</span>
+          </div>
+
+          {p.trainings.length === 0 ? (
+            <p className="muted small">Sem treinos prescritos.</p>
+          ) : (
+            <div className="staff-week-table-wrap" aria-label="Tabela semanal">
+              <table className="staff-week-table">
+                <colgroup>
+                  <col className="staff-col-title" />
+                  {days.map((d) => (
+                    <col
+                      key={d.key}
+                      className={d.isToday ? 'staff-col-day staff-col-day--today' : 'staff-col-day'}
+                    />
+                  ))}
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th scope="col" className="staff-th staff-th-title">
+                      Treinos
+                    </th>
+                    {days.map((d) => (
+                      <th
+                        key={d.key}
+                        scope="col"
+                        className={
+                          d.isToday
+                            ? 'staff-th staff-th-day staff-th-day--today'
+                            : 'staff-th staff-th-day'
+                        }
+                      >
+                        {d.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {p.trainings
+                    .slice()
+                    .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'))
+                    .map((t) => {
+                      const wds = weekDaysForTraining(t)
+                      const c = p.completionsByTrainingId.get(t.id)
+                      return (
+                        <tr key={t.id} className="staff-tr">
+                          <th scope="row" className="staff-td staff-td-title">
+                            <div className="staff-week-title">
+                              <strong>{t.title}</strong>
+                              <div className="muted small">
+                                {weekdaysToShort(wds)}
+                                {c?.athleteNotes ? ' · com observação' : ''}
+                                {c?.mediaUrls?.length ? ' · com mídia' : ''}
+                              </div>
+                            </div>
+                          </th>
+                          {days.map((d) => {
+                            const scheduled = wds.includes(d.wd)
+                            if (!scheduled) {
+                              return (
+                                <td key={d.key} className="staff-td staff-td-day">
+                                  <span className="staff-cell staff-cell--off">—</span>
+                                </td>
+                              )
+                            }
+                            const done = completionDoneOnDay(c, d.key)
+                            const cls = done
+                              ? 'pill pill-done'
+                              : d.isPast
+                                ? 'pill pill-lost'
+                                : d.isToday
+                                  ? 'pill pill-pending'
+                                  : 'pill pill-muted'
+                            const label = done
+                              ? 'Feito'
+                              : d.isPast
+                                ? 'Perdido'
+                                : d.isToday
+                                  ? 'Pendente'
+                                  : 'Previsto'
+                            return (
+                              <td key={d.key} className="staff-td staff-td-day">
+                                <span className={`staff-cell ${cls}`}>{label}</span>
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   )
 }

@@ -412,6 +412,38 @@ export async function getCompletion(
   }
 }
 
+export async function listCompletionsForUser(
+  userId: string,
+): Promise<TrainingCompletion[]> {
+  const snap = await getDocs(
+    query(collection(getDb(), 'trainingCompletions'), where('userId', '==', userId)),
+  )
+  const rows = snap.docs.map((d) => {
+    const x = d.data() as Record<string, unknown>
+    const notesRaw = x.athleteNotes
+    return {
+      id: d.id,
+      trainingId: String(x.trainingId),
+      userId: String(x.userId),
+      completed: Boolean(x.completed),
+      completedAt: x.completedAt ? tsToMs(x.completedAt) : null,
+      mediaUrls: Array.isArray(x.mediaUrls)
+        ? (x.mediaUrls as string[]).filter(Boolean)
+        : [],
+      athleteNotes:
+        notesRaw == null
+          ? null
+          : String(notesRaw).trim()
+            ? String(notesRaw)
+            : null,
+      updatedAt: tsToMs(x.updatedAt),
+    } satisfies TrainingCompletion
+  })
+  // mais recente primeiro ajuda em debug; a UI costuma mapear por trainingId mesmo
+  rows.sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
+  return rows
+}
+
 export async function upsertCompletion(input: {
   trainingId: string
   userId: string
