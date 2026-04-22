@@ -33,6 +33,8 @@ export function Select<T extends string>({
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState<number>(-1)
   const rootRef = useRef<HTMLDivElement>(null)
+  /** Portal em `document.body` — precisa de ref própria; senão o outside-click fecha no mousedown antes do click da opção. */
+  const popoverRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number; width: number }>({
@@ -54,7 +56,14 @@ export function Select<T extends string>({
   useEffect(() => {
     function handleDown(e: MouseEvent) {
       if (!open) return
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (
+        rootRef.current?.contains(t) ||
+        popoverRef.current?.contains(t)
+      ) {
+        return
+      }
+      setOpen(false)
     }
     document.addEventListener('mousedown', handleDown)
     return () => document.removeEventListener('mousedown', handleDown)
@@ -190,6 +199,7 @@ export function Select<T extends string>({
       {open &&
         createPortal(
           <div
+            ref={popoverRef}
             className="ui-select-popover"
             style={{
               top: pos.top,
