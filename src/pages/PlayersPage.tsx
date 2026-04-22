@@ -19,6 +19,8 @@ export function PlayersPage() {
   const [group, setGroup] = useState<'athletes' | 'staff'>('athletes')
   const [sector, setSector] = useState<Sector | 'all'>('all')
   const [q, setQ] = useState('')
+  /** Só na aba Atletas: chips de setor ficam recolhidos por padrão. */
+  const [sectorFiltersOpen, setSectorFiltersOpen] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -124,74 +126,113 @@ export function PlayersPage() {
         </label>
 
         {group === 'athletes' && (
-          <div className="stack">
-            <div className="tabs-scroll" aria-label="Filtrar por setor">
+          <>
+            <div
+              className="btn-row"
+              style={{
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 8,
+              }}
+            >
               <button
                 type="button"
-                className={`pill pill-button ${sector === 'all' ? 'pill-button--on' : ''}`}
-                onClick={() => setSector('all')}
+                className="btn-ghost"
+                aria-expanded={sectorFiltersOpen}
+                aria-controls="athlete-sector-filters"
+                onClick={() => setSectorFiltersOpen((o) => !o)}
               >
-                Todos
+                {sectorFiltersOpen
+                  ? 'Ocultar filtros por setor'
+                  : 'Mostrar filtros por setor'}
               </button>
+              {!sectorFiltersOpen && sector !== 'all' && (
+                <span className="muted small">
+                  Setor ativo: <strong>{sector}</strong>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    style={{ marginLeft: 6, padding: '4px 10px' }}
+                    onClick={() => setSector('all')}
+                  >
+                    Limpar setor
+                  </button>
+                </span>
+              )}
             </div>
 
-            <div className="tabs-scroll" aria-label="Setores de ataque">
-              {OFFENSE_SECTORS.map((s) => {
-                const count = athletes.filter((p) =>
-                  (p.sectors ?? []).includes(s),
-                ).length
-                return (
+            {sectorFiltersOpen && (
+              <div id="athlete-sector-filters" className="stack">
+                <div className="tabs-scroll" aria-label="Filtrar por setor">
                   <button
-                    key={s}
                     type="button"
-                    className={`pill pill-button ${sector === s ? 'pill-button--on' : ''}`}
-                    onClick={() => setSector(s)}
-                    title={`${count} atleta(s)`}
+                    className={`pill pill-button ${sector === 'all' ? 'pill-button--on' : ''}`}
+                    onClick={() => setSector('all')}
                   >
-                    {s} <span className="muted">({count})</span>
+                    Todos
                   </button>
-                )
-              })}
-            </div>
+                </div>
 
-            <div className="tabs-scroll" aria-label="Setores de defesa">
-              {DEFENSE_SECTORS.map((s) => {
-                const count = athletes.filter((p) =>
-                  (p.sectors ?? []).includes(s),
-                ).length
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    className={`pill pill-button ${sector === s ? 'pill-button--on' : ''}`}
-                    onClick={() => setSector(s)}
-                    title={`${count} atleta(s)`}
-                  >
-                    {s} <span className="muted">({count})</span>
-                  </button>
-                )
-              })}
-            </div>
+                <div className="tabs-scroll" aria-label="Setores de ataque">
+                  {OFFENSE_SECTORS.map((s) => {
+                    const count = athletes.filter((p) =>
+                      (p.sectors ?? []).includes(s),
+                    ).length
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        className={`pill pill-button ${sector === s ? 'pill-button--on' : ''}`}
+                        onClick={() => setSector(s)}
+                        title={`${count} atleta(s)`}
+                      >
+                        {s} <span className="muted">({count})</span>
+                      </button>
+                    )
+                  })}
+                </div>
 
-            <div className="tabs-scroll" aria-label="Outros setores">
-              {OTHER_SECTORS.map((s) => {
-                const count = athletes.filter((p) =>
-                  (p.sectors ?? []).includes(s),
-                ).length
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    className={`pill pill-button ${sector === s ? 'pill-button--on' : ''}`}
-                    onClick={() => setSector(s)}
-                    title={`${count} atleta(s)`}
-                  >
-                    {s} <span className="muted">({count})</span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+                <div className="tabs-scroll" aria-label="Setores de defesa">
+                  {DEFENSE_SECTORS.map((s) => {
+                    const count = athletes.filter((p) =>
+                      (p.sectors ?? []).includes(s),
+                    ).length
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        className={`pill pill-button ${sector === s ? 'pill-button--on' : ''}`}
+                        onClick={() => setSector(s)}
+                        title={`${count} atleta(s)`}
+                      >
+                        {s} <span className="muted">({count})</span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <div className="tabs-scroll" aria-label="Outros setores">
+                  {OTHER_SECTORS.map((s) => {
+                    const count = athletes.filter((p) =>
+                      (p.sectors ?? []).includes(s),
+                    ).length
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        className={`pill pill-button ${sector === s ? 'pill-button--on' : ''}`}
+                        onClick={() => setSector(s)}
+                        title={`${count} atleta(s)`}
+                      >
+                        {s} <span className="muted">({count})</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 

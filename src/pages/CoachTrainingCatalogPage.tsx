@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ExerciseSearchSelect } from '../components/ExerciseSearchSelect'
+import { Select } from '../components/Select'
 import {
   composeTrainingDescriptionForSave,
   weekdaysToShort,
@@ -311,16 +312,16 @@ export function CoachTrainingCatalog({
 
           <label className="field">
             <span>Modo da prescrição</span>
-            <select
+            <Select
+              ariaLabel="Modo da prescrição"
               value={rxMode}
-              onChange={(e) => setRxMode(e.target.value as PrescriptionMode)}
-            >
-              {RX_MODE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setRxMode(v as PrescriptionMode)}
+              options={RX_MODE_OPTIONS.map((o) => ({
+                value: o.value,
+                label: o.label,
+              }))}
+              disabled={busy}
+            />
           </label>
 
           <div className="two-col">

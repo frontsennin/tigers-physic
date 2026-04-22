@@ -86,7 +86,22 @@ export type AnalysisCategory =
   | 'reflexo'
   | 'impulso'
   | 'explosao'
+  | 'salto'
   | 'pegada'
+
+/** Opções do select “Tipo de medida” em análises (label + dica curta). */
+export const MEASURE_KIND_OPTIONS: {
+  value: MeasureKind
+  label: string
+  hint: string
+}[] = [
+  { value: 'time', label: 'Tempo', hint: 'Segundos ou milissegundos' },
+  { value: 'weight', label: 'Peso / carga', hint: 'Quilos, libras, %1RM' },
+  { value: 'distance', label: 'Distância / altura', hint: 'Metros, cm, jardas' },
+  { value: 'reps', label: 'Repetições', hint: 'Número de repetições' },
+  { value: 'score', label: 'Score / nota', hint: 'Escala ou pontuação' },
+  { value: 'custom', label: 'Texto livre', hint: 'Descrição em texto' },
+]
 
 export const ANALYSIS_CATEGORIES: {
   id: AnalysisCategory
@@ -128,7 +143,13 @@ export const ANALYSIS_CATEGORIES: {
     id: 'explosao',
     label: 'Explosão',
     suggestedMeasure: 'time',
-    hint: 'Ex.: salto vertical (cm), impulsão, split de aceleração (s).',
+    hint: 'Ex.: impulsão, split de aceleração, tempos de teste (s).',
+  },
+  {
+    id: 'salto',
+    label: 'Salto',
+    suggestedMeasure: 'distance',
+    hint: 'Ex.: salto vertical (cm), em distância (m) ou standing broad jump. Use o tipo “Distância / altura” e informe a unidade (cm, m).',
   },
   {
     id: 'pegada',

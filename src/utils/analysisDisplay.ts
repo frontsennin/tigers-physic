@@ -12,7 +12,7 @@ export function measureKindDisplayLabel(kind: MeasureKind): string {
   const labels: Record<MeasureKind, string> = {
     time: 'Tempo',
     weight: 'Peso / carga',
-    distance: 'Distância',
+    distance: 'Distância / altura',
     reps: 'Repetições',
     score: 'Score / nota',
     custom: 'Texto livre',

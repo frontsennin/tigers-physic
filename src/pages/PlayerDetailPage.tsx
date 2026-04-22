@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { ExerciseSearchSelect } from '../components/ExerciseSearchSelect'
+import { Select } from '../components/Select'
 import {
   composeTrainingDescriptionForSave,
   weekdaysToShort,
@@ -19,6 +20,7 @@ import {
 } from '../services/db'
 import {
   ANALYSIS_CATEGORIES,
+  MEASURE_KIND_OPTIONS,
   type AnalysisCategory,
   type MeasureKind,
   type PrescriptionMode,
@@ -253,16 +255,13 @@ export function PlayerDetailPage() {
               {canEditRole && (
                 <label className="field">
                   <span>Cargo</span>
-                  <select
+                  <Select
+                    ariaLabel="Cargo"
                     value={role}
-                    onChange={(e) => setRole(e.target.value as UserRole)}
-                  >
-                    {ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setRole(v as UserRole)}
+                    options={ROLES.map((r) => ({ value: r, label: r }))}
+                    disabled={savingMeta}
+                  />
                 </label>
               )}
               {canEditSectors && (
@@ -574,36 +573,40 @@ function useAnalysisForm(
           </div>
           <label className="field">
             <span>Categoria</span>
-            <select
+            <Select
+              ariaLabel="Categoria"
               value={category}
-              onChange={(e) =>
-                setCategory(e.target.value as AnalysisCategory)
-              }
-            >
-              {ANALYSIS_CATEGORIES.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setCategory(v as AnalysisCategory)}
+              options={ANALYSIS_CATEGORIES.map((c) => ({
+                value: c.id,
+                label: c.label,
+              }))}
+              disabled={busy}
+            />
           </label>
           <p className="muted small">
             {ANALYSIS_CATEGORIES.find((x) => x.id === category)?.hint}
           </p>
           <label className="field">
             <span>Tipo de medida</span>
-            <select
+            <Select
+              ariaLabel="Tipo de medida"
               value={measureKind}
-              onChange={(e) => setMeasureKind(e.target.value as MeasureKind)}
-            >
-              <option value="time">Tempo</option>
-              <option value="weight">Peso / carga</option>
-              <option value="distance">Distância</option>
-              <option value="reps">Repetições</option>
-              <option value="score">Score / nota</option>
-              <option value="custom">Texto livre</option>
-            </select>
+              onChange={(v) => setMeasureKind(v as MeasureKind)}
+              options={MEASURE_KIND_OPTIONS.map((o) => ({
+                value: o.value,
+                label: o.label,
+                hint: o.hint,
+              }))}
+              disabled={busy}
+            />
           </label>
+          <p className="muted small">
+            {
+              MEASURE_KIND_OPTIONS.find((x) => x.value === measureKind)
+                ?.hint
+            }
+          </p>
           <div className="two-col">
             <label className="field">
               <span>Valor numérico</span>
@@ -1057,16 +1060,16 @@ function useTrainingForm(
 
           <label className="field">
             <span>Modo da prescrição</span>
-            <select
+            <Select
+              ariaLabel="Modo da prescrição"
               value={rxMode}
-              onChange={(e) => setRxMode(e.target.value as PrescriptionMode)}
-            >
-              {RX_MODE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setRxMode(v as PrescriptionMode)}
+              options={RX_MODE_OPTIONS.map((o) => ({
+                value: o.value,
+                label: o.label,
+              }))}
+              disabled={busy}
+            />
           </label>
 
           <div className="two-col">
